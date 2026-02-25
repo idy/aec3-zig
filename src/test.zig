@@ -25,9 +25,8 @@ test "sample_ops f32 special values" {
     try std.testing.expectEqual(@as(f32, 0.0), ops.zero());
     try std.testing.expectEqual(@as(f32, 1.0), ops.one());
     try std.testing.expect(ops.maxValue() > 1e30);
-    // f32 minValue() returns smallest positive normal number, not most negative
-    // Use -maxValue() for most negative number
-    try std.testing.expect(-ops.maxValue() < -1e30);
+    // f32 minValue() returns most negative number (-maxValue)
+    try std.testing.expect(ops.minValue() < -1e30);
 }
 
 test "sample_ops f32 abs/neg/clamp" {
@@ -62,7 +61,7 @@ test "fixed_point Q15 add" {
     const Q15 = FixedPoint(15);
     const a = Q15.fromFloat(0.25);
     const b = Q15.fromFloat(0.75);
-    const result = Q15.add(a, b);
+    const result = Q15.addWrap(a, b);
 
     try std.testing.expectApproxEqAbs(@as(f32, 1.0), result.toFloat(), 0.0001);
 }
@@ -74,7 +73,7 @@ test "fixed_point Q15 mul" {
     const Q15 = FixedPoint(15);
     const a = Q15.fromFloat(0.5);
     const b = Q15.fromFloat(0.5);
-    const result = Q15.mul(a, b);
+    const result = Q15.mulWrap(a, b);
 
     try std.testing.expectApproxEqAbs(@as(f32, 0.25), result.toFloat(), 0.0001);
 }

@@ -64,15 +64,15 @@ pub fn FixedPoint(comptime frac_bits: u8) type {
 
         // ===== 基础算术（非饱和） =====
 
-        pub inline fn add(a: Self, b: Self) Self {
+        pub inline fn addWrap(a: Self, b: Self) Self {
             return .{ .raw = a.raw + b.raw };
         }
 
-        pub inline fn sub(a: Self, b: Self) Self {
+        pub inline fn subWrap(a: Self, b: Self) Self {
             return .{ .raw = a.raw - b.raw };
         }
 
-        pub inline fn mul(a: Self, b: Self) Self {
+        pub inline fn mulWrap(a: Self, b: Self) Self {
             const prod: AccumType = @as(AccumType, a.raw) * @as(AccumType, b.raw);
             const shifted = prod >> frac_bits;
             return .{ .raw = @as(IntType, @intCast(shifted)) };
