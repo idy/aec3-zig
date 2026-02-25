@@ -1,7 +1,11 @@
-//! FFT benchmark
+//! FFT + Foundation benchmark
 
 const std = @import("std");
+
 const aec3 = @import("aec3");
+const aec3_common = aec3.Aec3Common;
+const fft_data = aec3.FftData.FftData;
+const audio_util = aec3.AudioUtil;
 
 fn fillSignalF32(comptime N: usize) [N]f32 {
     var x: [N]f32 = undefined;
@@ -95,9 +99,72 @@ fn bench_fft_256_fixed_q15() !void {
     std.debug.print("bench_fft_256_fixed_q15: ns/op={d:.2}, throughput={d:.2} samples/s, guard={d:.3}\n", .{ ns_per_op, throughput, acc });
 }
 
+fn bench_fast_approx_log2f() !void {
+    const iterations: usize = 10_000;
+    var acc: f32 = 0.0;
+    var timer = try std.time.Timer.start();
+
+    var i: usize = 0;
+    while (i < iterations) : (i += 1) {
+        const x = 0.01 + @as(f32, @floatFromInt(i % 1000)) * 0.1;
+        acc += aec3_common.fast_approx_log2f(x);
+    }
+
+    const ns = timer.read();
+    const ns_per_op = @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(iterations));
+    std.debug.print("bench_fast_approx_log2f: total={d}ns ns/op={d:.2} acc={d:.3}\n", .{ ns, ns_per_op, acc });
+}
+
+fn bench_fft_data_spectrum() !void {
+    const iterations: usize = 10_000;
+    var d = fft_data.new();
+    var k: usize = 0;
+    while (k < aec3_common.FFT_LENGTH_BY_2_PLUS_1) : (k += 1) {
+        d.re[k] = @as(f32, @floatFromInt(k)) * 0.1;
+        d.im[k] = @as(f32, @floatFromInt(k)) * 0.05;
+    }
+    var out: [aec3_common.FFT_LENGTH_BY_2_PLUS_1]f32 = undefined;
+
+    var timer = try std.time.Timer.start();
+    var i: usize = 0;
+    while (i < iterations) : (i += 1) {
+        d.spectrum(.none, &out);
+    }
+
+    const ns = timer.read();
+    const ns_per_op = @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(iterations));
+    std.debug.print("bench_fft_data_spectrum: total={d}ns ns/op={d:.2} out0={d:.3}\n", .{ ns, ns_per_op, out[0] });
+}
+
+fn bench_audio_util_conversions() !void {
+    const iterations: usize = 10_000;
+    var src: [480]i16 = undefined;
+    var i: usize = 0;
+    while (i < src.len) : (i += 1) {
+        src[i] = @intCast((@as(i32, @intCast(i % 32768)) - 16384));
+    }
+
+    var fbuf: [480]f32 = undefined;
+    var dst: [480]i16 = undefined;
+    var timer = try std.time.Timer.start();
+
+    i = 0;
+    while (i < iterations) : (i += 1) {
+        audio_util.s16_slice_to_float_s16(&src, &fbuf);
+        audio_util.float_s16_slice_to_s16(&fbuf, &dst);
+    }
+
+    const ns = timer.read();
+    const ns_per_op = @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(iterations));
+    std.debug.print("bench_audio_util_conversions: total={d}ns ns/op={d:.2} dst0={d}\n", .{ ns, ns_per_op, dst[0] });
+}
+
 pub fn main() !void {
     try bench_fft_128_f32();
     try bench_fft_128_fixed_q15();
     try bench_fft_256_f32();
     try bench_fft_256_fixed_q15();
+    try bench_fast_approx_log2f();
+    try bench_fft_data_spectrum();
+    try bench_audio_util_conversions();
 }
