@@ -1,6 +1,8 @@
 .zig-cache/
 zig-out/
 openteam/
-tests/golden_generator
 tests/rust_bench_foundation
 worklog.md
+tests/golden/*.bin
+t2a_*.mp3
+tests/golden_generator/target/

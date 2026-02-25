@@ -251,3 +251,21 @@ test "test_if_channel_buffer_new_cleans_up_on_second_allocation_failure" {
     try std.testing.expectError(error.OutOfMemory, IFChannelBuffer.new(alloc, 8, 1, 1));
     try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
 }
+
+test "test_set_num_channels_boundary_values" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var buf = try ChannelBuffer(i16).new(arena.allocator(), 8, 2, 1);
+    defer buf.deinit();
+    buf.set_num_channels(0);
+    try std.testing.expectEqual(@as(usize, 0), buf.num_channels());
+    buf.set_num_channels(2);
+    try std.testing.expectEqual(@as(usize, 2), buf.num_channels());
+
+    var if_buf = try IFChannelBuffer.new(arena.allocator(), 8, 2, 1);
+    defer if_buf.deinit();
+    if_buf.set_num_channels(0);
+    try std.testing.expectEqual(@as(usize, 0), if_buf.ibuf_const().num_channels());
+    try std.testing.expectEqual(@as(usize, 0), if_buf.fbuf_const().num_channels());
+}

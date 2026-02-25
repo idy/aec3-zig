@@ -103,7 +103,6 @@ fn main() {
         let file = File::create("tests/golden/golden_config_default.bin").unwrap();
         let mut w = BufWriter::new(file);
 
-        // Ordered scalar snapshot of key default values.
         write_u32(&mut w, 20);
         let values: [f64; 20] = [
             250.0, 8.0, 5.0, 4.0, 13.0, 12.0, 1.0, 4.0, 1.5, 1.0, 0.83, 100.0, 150.0, 50.0,

@@ -180,3 +180,59 @@ test "test_downmix_to_mono" {
     try std.testing.expectEqual(@as(f32, 2.0), out[0]);
     try std.testing.expectEqual(@as(f32, 2.0), out[1]);
 }
+
+test "test_zero_length_slice_boundaries" {
+    var empty_i16: [0]i16 = .{};
+    var empty_f32: [0]f32 = .{};
+
+    s16_slice_to_float_s16(empty_i16[0..], empty_f32[0..]);
+    float_s16_slice_to_s16(empty_f32[0..], empty_i16[0..]);
+    float_slice_to_float_s16(empty_f32[0..], empty_f32[0..]);
+    float_slice_to_float_s16_in_place(empty_f32[0..]);
+    float_s16_slice_to_float(empty_f32[0..], empty_f32[0..]);
+    float_s16_slice_to_float_in_place(empty_f32[0..]);
+
+    var out0: [0]i16 = .{};
+    downmix_interleaved_to_mono_i16(empty_i16[0..], 0, 1, out0[0..]);
+}
+
+test "test_copy_audio_if_needed_alias_boundary" {
+    var shared = [_]f32{ 1.0, 2.0, 3.0, 4.0 };
+    const src = [_][]const f32{shared[0..]};
+    const dest = [_][]f32{shared[0..]};
+
+    copy_audio_if_needed(f32, &src, 4, &dest);
+    try std.testing.expectEqual(@as(f32, 1.0), shared[0]);
+    try std.testing.expectEqual(@as(f32, 4.0), shared[3]);
+}
+
+test "test_downmix_i16_clamps_to_i16_range" {
+    const c0 = [_]i16{ std.math.maxInt(i16), std.math.minInt(i16) };
+    const c1 = [_]i16{ std.math.maxInt(i16), std.math.minInt(i16) };
+    const c2 = [_]i16{ std.math.maxInt(i16), std.math.minInt(i16) };
+    const channels = [_][]const i16{ c0[0..], c1[0..], c2[0..] };
+
+    var out = [_]i16{ 0, 0 };
+    downmix_to_mono_i16(&channels, 2, out[0..]);
+    try std.testing.expectEqual(std.math.maxInt(i16), out[0]);
+    try std.testing.expectEqual(std.math.minInt(i16), out[1]);
+}
+
+test "test_deinterleave_interleave_zero_samples" {
+    const inter: [0]i16 = .{};
+    var ch0: [0]i16 = .{};
+    var ch1: [0]i16 = .{};
+    const deint = [_][]i16{ ch0[0..], ch1[0..] };
+    deinterleave(i16, inter[0..], 0, 2, &deint);
+
+    var out: [0]i16 = .{};
+    const planar = [_][]const i16{ ch0[0..], ch1[0..] };
+    interleave(i16, &planar, 0, 2, out[0..]);
+}
+
+test "test_downmix_interleaved_single_channel_passthrough" {
+    const src = [_]i16{ 10, -20, 30 };
+    var out = [_]i16{ 0, 0, 0 };
+    downmix_interleaved_to_mono_i16(src[0..], 3, 1, out[0..]);
+    try std.testing.expectEqualSlices(i16, src[0..], out[0..]);
+}
