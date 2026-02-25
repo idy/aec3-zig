@@ -53,9 +53,14 @@ pub fn FixedPoint(comptime frac_bits: u8) type {
         /// 从运行时浮点数创建
         pub inline fn fromFloatRuntime(v: f32) Self {
             const scaled = v * @as(f32, @floatFromInt(scale));
-            // Clamp to valid i32 range before conversion to prevent overflow
-            const clamped = std.math.clamp(scaled, @as(f32, @floatFromInt(min_val)), @as(f32, @floatFromInt(max_val)));
-            const rounded = @round(clamped);
+            const rounded = @round(scaled);
+            // Saturate to valid i32 range to prevent overflow
+            if (rounded >= @as(f32, @floatFromInt(max_val))) {
+                return .{ .raw = max_val };
+            }
+            if (rounded <= @as(f32, @floatFromInt(min_val))) {
+                return .{ .raw = min_val };
+            }
             return .{ .raw = @as(IntType, @intFromFloat(rounded)) };
         }
 

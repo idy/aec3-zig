@@ -273,3 +273,72 @@ test "fixed_point Q15 div" {
         try std.testing.expectApproxEqAbs(@as(f32, 1.0), result.toFloat(), 0.001);
     }
 }
+
+test "fixed_point Q15 neg and abs boundary protection" {
+    const std = @import("std");
+    const FixedPoint = @import("fixed_point.zig").FixedPoint;
+
+    const Q15 = FixedPoint(15);
+
+    // Test neg(minValue) - should saturate to maxValue to avoid overflow
+    {
+        const min_val = Q15.minValue();
+        const neg_result = Q15.neg(min_val);
+        // -minValue would overflow, so it should saturate to maxValue
+        try std.testing.expectEqual(neg_result.raw, Q15.maxValue().raw);
+    }
+
+    // Test abs(minValue) - should saturate to maxValue to avoid overflow
+    {
+        const min_val = Q15.minValue();
+        const abs_result = Q15.abs(min_val);
+        // abs(minValue) would overflow, so it should saturate to maxValue
+        try std.testing.expectEqual(abs_result.raw, Q15.maxValue().raw);
+    }
+
+    // Test normal neg/abs cases still work
+    {
+        const a = Q15.fromFloat(0.5);
+        const neg_a = Q15.neg(a);
+        try std.testing.expectApproxEqAbs(@as(f32, -0.5), neg_a.toFloat(), 0.001);
+
+        const abs_neg_a = Q15.abs(neg_a);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.5), abs_neg_a.toFloat(), 0.001);
+    }
+}
+
+test "fixed_point Q15 fromFloatRuntime extreme values" {
+    const std = @import("std");
+    const FixedPoint = @import("fixed_point.zig").FixedPoint;
+
+    const Q15 = FixedPoint(15);
+
+    // Test large positive value - should clamp to maxValue
+    // Q15 max is ~65535.999, so 100000.0 is way beyond range
+    {
+        const large_pos: f32 = 100000.0;
+        const result = Q15.fromFloatRuntime(large_pos);
+        try std.testing.expectEqual(result.raw, Q15.maxValue().raw);
+    }
+
+    // Test large negative value - should clamp to minValue
+    {
+        const large_neg: f32 = -100000.0;
+        const result = Q15.fromFloatRuntime(large_neg);
+        try std.testing.expectEqual(result.raw, Q15.minValue().raw);
+    }
+
+    // Test values at the boundary
+    {
+        const near_max: f32 = 65535.0; // Close to Q15 max
+        const result = Q15.fromFloatRuntime(near_max);
+        try std.testing.expect(result.raw > 0);
+    }
+
+    // Test normal values still work
+    {
+        const normal: f32 = 0.5;
+        const result = Q15.fromFloatRuntime(normal);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.5), result.toFloat(), 0.001);
+    }
+}
