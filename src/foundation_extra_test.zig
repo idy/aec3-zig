@@ -95,7 +95,7 @@ test "audio_util copy_audio_if_needed and integer downmix" {
 test "audio_frame reset/copy/profile/mutable_data" {
     var frame = audio_frame.AudioFrame.new();
     const data = [_]i16{ 5, 6, 7, 8 };
-    frame.update_frame(9, &data, 2, 16_000, .normal_speech, .active, 2);
+    try frame.update_frame(9, &data, 2, 16_000, .normal_speech, .active, 2);
     frame.update_profile_timestamp();
     try std.testing.expect(frame.elapsed_profile_time_ms() >= 0);
 
@@ -142,16 +142,26 @@ test "channel buffer metadata and IF conversion" {
 test "config init methods and defaults" {
     const b = config.Buffering.default();
     try std.testing.expectEqual(@as(usize, 250), b.excess_render_detection_interval_blocks);
-    _ = config.Delay.default();
-    _ = config.Filter.default();
-    _ = config.Erle.default();
-    _ = config.EpStrength.default();
-    _ = config.EchoAudibility.default();
-    _ = config.RenderLevels.default();
-    _ = config.EchoRemovalControl.default();
-    _ = config.TransparentModeConfig.default();
-    _ = config.EchoModel.default();
-    _ = config.Suppressor.default();
+    const d = config.Delay.default();
+    try std.testing.expectEqual(@as(usize, 4), d.down_sampling_factor);
+    const f = config.Filter.default();
+    try std.testing.expectEqual(@as(usize, 13), f.main.length_blocks);
+    const erle = config.Erle.default();
+    try std.testing.expectEqual(@as(f32, 1.0), erle.min);
+    const ep = config.EpStrength.default();
+    try std.testing.expectEqual(@as(f32, 0.83), ep.default_len);
+    const audibility = config.EchoAudibility.default();
+    try std.testing.expectEqual(@as(f32, 64.0), audibility.normal_render_limit);
+    const levels = config.RenderLevels.default();
+    try std.testing.expectEqual(@as(f32, 20.0), levels.poor_excitation_render_limit_ds8);
+    const removal = config.EchoRemovalControl.default();
+    try std.testing.expect(!removal.has_clock_drift);
+    const transparent = config.TransparentModeConfig.default();
+    try std.testing.expect(transparent.enabled);
+    const model = config.EchoModel.default();
+    try std.testing.expectEqual(@as(usize, 50), model.noise_floor_hold);
+    const suppressor = config.Suppressor.default();
+    try std.testing.expectEqual(@as(usize, 4), suppressor.nearend_average_blocks);
 
     const mask = config.MaskingThresholds.init(0.1, 0.2, 0.3);
     try std.testing.expectEqual(@as(f32, 0.1), mask.enr_transparent);

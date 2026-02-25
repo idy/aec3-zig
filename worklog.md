@@ -108,3 +108,141 @@
 3. 按“公开函数 100% + 每函数至少 1 个边界测试”补齐测试，不接受仅调用不校验。
 4. 扩展双轨对比：至少覆盖本 worktree 公共 API 的 fixed->float 对照，并记录误差阈值。
 5. 重新跑 benchmark，修正结论；若 Zig 慢于 Rust，必须给出原因与后续优化计划。
+
+## 2026-02-25 18:03:03 +0800
+
+### 结论
+**Reject**
+
+这次 re-review 结果很直接：上次阻断项并没有实质性关完，且还混入了不该进 PR 的二进制产物。构建能过不代表可以验收，语义错和流程错都还在。
+
+### 执行记录
+- ✅ `zig build`：通过
+- ✅ `zig build test`：通过（含 fixed vs float smoke 输出）
+- ✅ `zig build -Dtarget=thumb-freestanding-none`：通过
+- ✅ `zig build bench`：通过
+  - `bench_fast_approx_log2f: ns/op=0.61`
+  - `bench_fft_data_spectrum: ns/op=0.26`
+  - `bench_audio_util_conversions: ns/op=138.89`
+
+### 上次阻断项复查状态
+1. **`channel_layout.surround` 映射是否与 Rust 一致**：**未修复** ❌  
+   - Zig: `src/audio_processing/channel_layout.zig:46` 把 `.surround` 放在 3 通道分组。  
+   - Rust: `.openteam/docs/aec3-rs-src/audio_processing/channel_layout.rs:52-57` 明确 `Surround => 4`。  
+   - 这是功能语义错误，不是“可接受偏差”。
+
+2. **`detect_optimization()` 运行时检测语义是否与 Rust 一致**：**未修复** ❌  
+   - Zig: `src/audio_processing/aec3/aec3_common.zig:101-109` 仅按架构返回（x86/x64=>SSE2, arm/aarch64=>NEON）。  
+   - Rust: `.openteam/docs/aec3-rs-src/audio_processing/aec3/aec3_common.rs:102-125` 使用 `is_*_feature_detected!` 做运行时特性检测。  
+   - 现在 Zig 语义是“架构猜测”，不是“运行时能力检测”。
+
+3. **fixed-point-first 是否闭环（默认 fixed + 规则一致）**：**未修复** ❌  
+   - 有封闭模式枚举：`src/numeric_mode.zig`，也有映射：`src/numeric_profile.zig`。  
+   - 但缺少可执行/可验证的“默认实例化就是 `fixed_mcu_q15`”入口约束（代码里只有注释声明，没有默认 profile 导出或默认构建路径选择）。  
+   - 结论：规则声明有了，闭环落地不够。
+
+4. **每个公开函数是否满足“≥1 功能测试 + ≥1 边界测试”**：**未修复** ❌  
+   - 仍存在“调用即覆盖”的弱测试，边界语义覆盖不全。示例：  
+     - `aec3_common.get_down_sampled_buffer_size/get_render_delay_buffer_size` 无 `down_sampling_factor=0` 断言语义测试。  
+     - `ChannelBuffer.new` 无 `frames=0/channels=0/frames%bands!=0` 边界断言测试。  
+     - `AudioFrame.update_frame` 无超 `MAX_DATA_SIZE_SAMPLES` 边界断言测试。  
+   - 该门禁要求“每个公开函数 + 边界”，目前证据不足。
+
+5. **Rust 对比策略是否落实（Rust->Zig(float)，fixed->float）**：**部分修复，仍不达验收** ⚠️  
+   - 已有 Rust->Zig(float) golden：`src/test_golden.zig`（3 组向量）。  
+   - 已有 fixed->float smoke：`src/test_support/smoke_fir.zig`。  
+   - 但未形成覆盖 foundation 公共 API 的系统化 fixed->float 对照矩阵与阈值记录；目前仅 smoke 级别，不能宣称“策略落实完成”。
+
+### 其他问题（本次新增）
+1. **PR 变更包含不应提交的编译产物** ❌  
+   - `git diff --name-only origin/main...HEAD` 包含 `tests/rust_bench_foundation`。  
+   - `file tests/rust_bench_foundation` 结果：`Mach-O 64-bit executable arm64`。  
+   - 这是赤裸裸的本地编译产物，必须从 PR 移除。
+
+2. **PR 描述格式不符合要求** ❌  
+   - 通过 `gh pr view` 看到标题/正文为英文，这是好的。  
+   - 但正文分节为 `Summary` + `Validation`，不是要求的 `Summary` + `Testing`。  
+   - 需改写为规范格式，并明确列出测试命令与结果/未执行原因。
+
+3. **二进制 golden 文件在 PR 中** ⚠️  
+   - `tests/golden/*.bin` 为二进制文件。若保留，需在 PR 中明确必要性、体积控制和仓库策略（建议 LFS 或生成脚本+不入库策略说明）。
+
+### 下一步建议（必须执行）
+1. 先修语义硬伤：`ChannelLayout.surround` 改为 4，并补回归测试。
+2. 重写 `detect_optimization()`：改为运行时特性检测语义，不接受架构硬编码替代。
+3. 给出“默认 fixed_mcu_q15”可验证实现（默认 profile 导出/默认实例化入口），不要只写注释。
+4. 补齐公开函数边界测试矩阵（assert/panic 行为也算测试目标）。
+5. 扩展 fixed->float 对照到 foundation 公共 API（至少核心函数族），并记录误差阈值。
+6. 从 PR 删除 `tests/rust_bench_foundation` 可执行文件；处理二进制 golden 策略。
+7. 改写 PR 描述为 `Summary` + `Testing` 结构后再提审。
+
+## 2026-02-25 19:10:00 +0800
+
+### 开发修复记录
+
+已按 Reviewer 阻断项完成代码修复与复验：
+
+1. **`ChannelLayout.surround` 映射修正**
+   - 文件：`src/audio_processing/channel_layout.zig`
+   - 修复：`.surround` 从 3 通道改为 4 通道，并更新回归测试断言。
+
+2. **`detect_optimization()` 语义修正**
+   - 文件：`src/audio_processing/aec3/aec3_common.zig`
+   - 修复：
+     - `detectSse2()` 改为 x86/x64 上基于 `cpuid` 的运行时检测（EDX bit26）。
+     - `detectNeon()` 改为 ARM/AArch64 上的能力检测：Linux 走 `getauxval(AT_HWCAP)`，其他平台回退到目标 feature-set 判断。
+   - 同时保留 `resolve_optimization()` 语义与 Rust 对齐（SSE2 优先于 NEON）。
+
+3. **fixed-point-first 默认入口可验证**
+   - 文件：`src/numeric_profile.zig`、`src/root.zig`
+   - 修复：新增
+     - `DEFAULT_NUMERIC_MODE = .fixed_mcu_q15`
+     - `DefaultProfile = profileFor(DEFAULT_NUMERIC_MODE)`
+     - root 导出 `DEFAULT_NUMERIC_MODE` 与 `DefaultNumericProfile`
+   - 并新增测试验证默认模式确为 `fixed_mcu_q15`。
+
+4. **边界测试补齐（针对 review 指出的缺口）**
+   - `aec3_common`：
+     - `get_down_sampled_buffer_size` / `get_render_delay_buffer_size` 改为可返回错误，新增 `down_sampling_factor=0` 边界测试。
+   - `channel_buffer`：
+     - `ChannelBuffer.new` 改为显式返回错误（无效 frame/channel/band/不可整除），新增 invalid-dimensions 测试。
+   - `audio_frame`：
+     - `update_frame` 改为 `!void`，对超 `MAX_DATA_SIZE_SAMPLES` 与输入长度不足返回错误，新增边界测试。
+
+5. **fixed->float 对照补充**
+   - 新增文件：`src/foundation_fixed_float_test.zig`
+   - 增加对照矩阵：
+     - `audio_util` roundtrip（Q15 量化后回转）
+     - `fft_data.spectrum` 在 Q15 量化输入下与 float 基线对照（给出误差阈值）
+
+6. **不应提交产物处理**
+   - 删除跟踪的本地可执行产物：`tests/rust_bench_foundation`
+   - `.gitignore` 增加：
+     - `tests/golden_generator`
+     - `tests/rust_bench_foundation`
+
+7. **golden 二进制策略说明**
+   - 新增 `tests/golden/README.md`，说明二进制向量入库目的、再生步骤与验证命令。
+
+### 复验结果
+
+- ✅ `zig build`
+- ✅ `zig build test`
+- ✅ `zig build -Dtarget=thumb-freestanding-none`
+- ✅ `zig build bench`
+  - `bench_fast_approx_log2f: 0.53 ns/op`
+  - `bench_fft_data_spectrum: 0.31 ns/op`
+  - `bench_audio_util_conversions: 139.38 ns/op`
+- ✅ `rustc tests/rust_bench_foundation.rs -O -o /tmp/rust_bench_foundation_pf && /tmp/rust_bench_foundation_pf`
+  - `bench_fast_approx_log2f: 0.61 ns/op`
+  - `bench_fft_data_spectrum: 0.26 ns/op`
+  - `bench_audio_util_conversions: 61.17 ns/op`
+
+### 性能结论修正
+
+- 不再宣称“Zig 三项均快于 Rust”。
+- 当前结果为：
+  - `fast_approx_log2f`：Zig 更快
+  - `fft_data_spectrum`：Rust 略快
+  - `audio_util_conversions`：Rust 明显更快
+- 后续计划：优先优化 `audio_util` 的批量转换路径（向量化/循环展开/减少额外转换）。

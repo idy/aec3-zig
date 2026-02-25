@@ -81,10 +81,14 @@ pub const AudioFrame = struct {
         speech_type: SpeechType,
         vad_activity: VadActivity,
         num_channels: usize,
-    ) void {
-        std.debug.assert(samples_per_channel * num_channels <= MAX_DATA_SIZE_SAMPLES);
+    ) !void {
+        if (samples_per_channel * num_channels > MAX_DATA_SIZE_SAMPLES) {
+            return error.TooManySamples;
+        }
         const len = samples_per_channel * num_channels;
-        std.debug.assert(input_data.len >= len);
+        if (input_data.len < len) {
+            return error.InsufficientInputData;
+        }
 
         self.timestamp = timestamp;
         self.samples_per_channel = samples_per_channel;
@@ -166,7 +170,7 @@ test "test_new_default_values" {
 test "test_mute_and_data" {
     var frame = AudioFrame.new();
     const raw = [_]i16{ 1, 2, 3, 4 };
-    frame.update_frame(1, &raw, 2, 16_000, .normal_speech, .active, 2);
+    try frame.update_frame(1, &raw, 2, 16_000, .normal_speech, .active, 2);
     frame.mute();
     const out = frame.data();
     for (out) |v| try std.testing.expectEqual(@as(i16, 0), v);
@@ -175,10 +179,19 @@ test "test_mute_and_data" {
 test "test_update_frame" {
     var frame = AudioFrame.new();
     const raw = [_]i16{ 1, 2, 3, 4 };
-    frame.update_frame(123, &raw, 2, 16_000, .normal_speech, .active, 2);
+    try frame.update_frame(123, &raw, 2, 16_000, .normal_speech, .active, 2);
     try std.testing.expectEqual(@as(u32, 123), frame.timestamp);
     try std.testing.expectEqual(@as(usize, 2), frame.samples_per_channel);
     try std.testing.expectEqual(@as(i32, 16_000), frame.sample_rate_hz);
     try std.testing.expectEqual(ChannelLayout.stereo, frame.channel_layout);
     try std.testing.expect(!frame.muted());
+}
+
+test "test_update_frame_rejects_invalid_sizes" {
+    var frame = AudioFrame.new();
+    const short = [_]i16{ 1, 2, 3 };
+    try std.testing.expectError(error.InsufficientInputData, frame.update_frame(1, &short, 2, 16_000, .normal_speech, .active, 2));
+
+    const tiny = [_]i16{0};
+    try std.testing.expectError(error.TooManySamples, frame.update_frame(1, &tiny, MAX_DATA_SIZE_SAMPLES + 1, 16_000, .normal_speech, .active, 1));
 }

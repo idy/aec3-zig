@@ -17,10 +17,10 @@ pub fn ChannelBuffer(comptime T: type) type {
 
         /// Creates a new ChannelBuffer with the specified dimensions.
         pub fn new(allocator: std.mem.Allocator, frames: usize, channels: usize, bands: usize) !Self {
-            std.debug.assert(frames > 0);
-            std.debug.assert(channels > 0);
-            std.debug.assert(bands >= 1);
-            std.debug.assert(frames % bands == 0);
+            if (frames == 0) return error.InvalidFrameCount;
+            if (channels == 0) return error.InvalidChannelCount;
+            if (bands == 0) return error.InvalidBandCount;
+            if (frames % bands != 0) return error.FrameCountNotDivisibleByBandCount;
 
             return .{
                 .data_ = try allocator.alloc(T, frames * channels),
@@ -228,4 +228,14 @@ test "test_multi_band" {
     buf.band_mut(0, 1)[0] = 2.0;
     try std.testing.expectEqual(@as(f32, 1.0), buf.band(0, 0)[0]);
     try std.testing.expectEqual(@as(f32, 2.0), buf.band(0, 1)[0]);
+}
+
+test "test_new_rejects_invalid_dimensions" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    try std.testing.expectError(error.InvalidFrameCount, ChannelBuffer(f32).new(arena.allocator(), 0, 1, 1));
+    try std.testing.expectError(error.InvalidChannelCount, ChannelBuffer(f32).new(arena.allocator(), 8, 0, 1));
+    try std.testing.expectError(error.InvalidBandCount, ChannelBuffer(f32).new(arena.allocator(), 8, 1, 0));
+    try std.testing.expectError(error.FrameCountNotDivisibleByBandCount, ChannelBuffer(f32).new(arena.allocator(), 7, 1, 2));
 }
