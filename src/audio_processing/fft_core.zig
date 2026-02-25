@@ -24,7 +24,6 @@ pub fn FftCore(comptime T: type, comptime N: usize) type {
 
     const Ops = SampleOps(T);
     const ComplexT = Complex(T);
-    const ComplexF = Complex(f32);
     const log2_n = std.math.log2_int(usize, N);
 
     return struct {
@@ -34,40 +33,35 @@ pub fn FftCore(comptime T: type, comptime N: usize) type {
         };
 
         pub fn forward(input: *[N]ComplexT) void {
-            if (T == f32) {
-                transformGeneric(input, false);
-            } else {
-                var tmp: [N]ComplexF = undefined;
-                for (0..N) |i| {
-                    tmp[i] = ComplexF.init(Ops.toFloat(input[i].re), Ops.toFloat(input[i].im));
-                }
-                transformFloat(&tmp, false);
-                for (0..N) |i| {
-                    input[i] = ComplexT.init(Ops.fromFloat(tmp[i].re), Ops.fromFloat(tmp[i].im));
-                }
-            }
+            transformGeneric(input, false);
         }
 
         pub fn inverse(input: *[N]ComplexT) void {
-            if (T == f32) {
-                transformGeneric(input, true);
-                const inv_n = Ops.div(Ops.one(), Ops.fromInt(@as(i32, @intCast(N))));
-                for (input) |*v| {
-                    v.* = ComplexT.scale(v.*, inv_n);
-                }
-            } else {
-                var tmp: [N]ComplexF = undefined;
-                for (0..N) |i| {
-                    tmp[i] = ComplexF.init(Ops.toFloat(input[i].re), Ops.toFloat(input[i].im));
-                }
-                transformFloat(&tmp, true);
-                const inv_n = 1.0 / @as(f32, @floatFromInt(N));
-                for (0..N) |i| {
-                    tmp[i].re *= inv_n;
-                    tmp[i].im *= inv_n;
-                    input[i] = ComplexT.init(Ops.fromFloat(tmp[i].re), Ops.fromFloat(tmp[i].im));
-                }
+            transformGeneric(input, true);
+            const inv_n = Ops.div(Ops.one(), Ops.fromInt(@as(i32, @intCast(N))));
+            for (input) |*v| {
+                v.* = ComplexT.scale(v.*, inv_n);
             }
+        }
+
+        pub fn forwardOracleFloat(input: *const [N]T) [N]Complex(f32) {
+            var tmp: [N]Complex(f32) = undefined;
+            for (0..N) |i| {
+                tmp[i] = Complex(f32).init(Ops.toFloat(input[i]), 0.0);
+            }
+            transformFloatGeneric(&tmp, false);
+            return tmp;
+        }
+
+        pub fn inverseOracleFloat(spec: *const [N]Complex(f32)) [N]f32 {
+            var tmp = spec.*;
+            transformFloatGeneric(&tmp, true);
+            const inv_n = 1.0 / @as(f32, @floatFromInt(N));
+            var out: [N]f32 = undefined;
+            for (0..N) |i| {
+                out[i] = tmp[i].re * inv_n;
+            }
+            return out;
         }
 
         pub fn forwardReal(input: *const [N]T) Spectrum {
@@ -148,7 +142,7 @@ pub fn FftCore(comptime T: type, comptime N: usize) type {
             }
         }
 
-        fn transformFloat(data: *[N]ComplexF, inverse_mode: bool) void {
+        fn transformFloatGeneric(data: *[N]Complex(f32), inverse_mode: bool) void {
             // Bit-reversal permutation
             for (0..N) |i| {
                 const j = bitReverse(log2_n, i);
@@ -170,11 +164,11 @@ pub fn FftCore(comptime T: type, comptime N: usize) type {
                     var j: usize = 0;
                     while (j < half) : (j += 1) {
                         const angle = step_angle * @as(f32, @floatFromInt(j));
-                        const w = ComplexF.init(@cos(angle), @sin(angle));
+                        const w = Complex(f32).init(@cos(angle), @sin(angle));
                         const u = data[i + j];
-                        const t = ComplexF.mul(w, data[i + j + half]);
-                        data[i + j] = ComplexF.add(u, t);
-                        data[i + j + half] = ComplexF.sub(u, t);
+                        const t = Complex(f32).mul(w, data[i + j + half]);
+                        data[i + j] = Complex(f32).add(u, t);
+                        data[i + j + half] = Complex(f32).sub(u, t);
                     }
                 }
             }

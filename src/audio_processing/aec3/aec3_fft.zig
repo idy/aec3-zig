@@ -2,8 +2,14 @@ const std = @import("std");
 const FftCore = @import("../fft_core.zig").FftCore;
 const common = @import("aec3_common.zig");
 const FftData = @import("fft_data.zig").FftData;
+const NumericMode = @import("../../numeric_mode.zig").NumericMode;
+const profileFor = @import("../../numeric_profile.zig").profileFor;
 
-const FFT = FftCore(f32, common.FFT_LENGTH);
+const FixedProfile = profileFor(.fixed_mcu_q15);
+const OracleProfile = profileFor(.float32);
+const Q15 = FixedProfile.Sample;
+const FFT_FIXED = FftCore(Q15, common.FFT_LENGTH);
+const FFT_ORACLE = FftCore(OracleProfile.Sample, common.FFT_LENGTH);
 
 pub const Window = enum {
     rectangular,
@@ -14,48 +20,94 @@ pub const Window = enum {
 pub const Aec3Fft = struct {
     const Self = @This();
 
+    mode: NumericMode = .fixed_mcu_q15,
+
     pub fn init() Self {
-        return .{};
+        return .{ .mode = .fixed_mcu_q15 };
+    }
+
+    pub fn initOracle() Self {
+        return .{ .mode = .float32 };
     }
 
     pub fn fft(self: *const Self, x: []const f32) FftData {
-        _ = self;
         std.debug.assert(x.len == common.FFT_LENGTH);
-        var input: [common.FFT_LENGTH]f32 = undefined;
-        @memcpy(input[0..], x);
-
-        const spec = FFT.forwardReal(&input);
         var out = FftData{};
-        out.re[0] = spec.re[0];
-        out.im[0] = 0.0;
-        out.re[common.FFT_LENGTH_BY_2] = spec.re[common.FFT_LENGTH_BY_2];
-        out.im[common.FFT_LENGTH_BY_2] = 0.0;
-        for (1..common.FFT_LENGTH_BY_2) |k| {
-            out.re[k] = spec.re[k];
-            out.im[k] = spec.im[k];
+
+        switch (self.mode) {
+            .fixed_mcu_q15 => {
+                var input: [common.FFT_LENGTH]Q15 = undefined;
+                for (0..common.FFT_LENGTH) |i| {
+                    input[i] = Q15.fromFloatRuntime(x[i]);
+                }
+                const spec = FFT_FIXED.forwardReal(&input);
+                out.re[0] = spec.re[0].toFloat();
+                out.im[0] = 0.0;
+                out.re[common.FFT_LENGTH_BY_2] = spec.re[common.FFT_LENGTH_BY_2].toFloat();
+                out.im[common.FFT_LENGTH_BY_2] = 0.0;
+                for (1..common.FFT_LENGTH_BY_2) |k| {
+                    out.re[k] = spec.re[k].toFloat();
+                    out.im[k] = spec.im[k].toFloat();
+                }
+            },
+            .float32 => {
+                var input: [common.FFT_LENGTH]f32 = undefined;
+                @memcpy(input[0..], x);
+                const spec = FFT_ORACLE.forwardReal(&input);
+                out.re[0] = spec.re[0];
+                out.im[0] = 0.0;
+                out.re[common.FFT_LENGTH_BY_2] = spec.re[common.FFT_LENGTH_BY_2];
+                out.im[common.FFT_LENGTH_BY_2] = 0.0;
+                for (1..common.FFT_LENGTH_BY_2) |k| {
+                    out.re[k] = spec.re[k];
+                    out.im[k] = spec.im[k];
+                }
+            },
         }
+
         return out;
     }
 
     pub fn ifft(self: *const Self, X: FftData) [common.FFT_LENGTH]f32 {
-        _ = self;
-        var spec: FFT.Spectrum = .{
-            .re = [_]f32{0.0} ** common.FFT_LENGTH_BY_2_PLUS_1,
-            .im = [_]f32{0.0} ** common.FFT_LENGTH_BY_2_PLUS_1,
-        };
-        for (0..common.FFT_LENGTH_BY_2_PLUS_1) |k| {
-            spec.re[k] = X.re[k];
-            spec.im[k] = if (k == 0 or k == common.FFT_LENGTH_BY_2) 0.0 else X.im[k];
+        var out: [common.FFT_LENGTH]f32 = undefined;
+        switch (self.mode) {
+            .fixed_mcu_q15 => {
+                var spec: FFT_FIXED.Spectrum = .{
+                    .re = [_]Q15{Q15.zero()} ** common.FFT_LENGTH_BY_2_PLUS_1,
+                    .im = [_]Q15{Q15.zero()} ** common.FFT_LENGTH_BY_2_PLUS_1,
+                };
+                for (0..common.FFT_LENGTH_BY_2_PLUS_1) |k| {
+                    spec.re[k] = Q15.fromFloatRuntime(X.re[k]);
+                    spec.im[k] = if (k == 0 or k == common.FFT_LENGTH_BY_2) Q15.zero() else Q15.fromFloatRuntime(X.im[k]);
+                }
+                const fixed_out = FFT_FIXED.inverseReal(&spec);
+                const scaling = @as(f32, @floatFromInt(common.FFT_LENGTH / 2));
+                for (0..common.FFT_LENGTH) |i| {
+                    out[i] = fixed_out[i].toFloat() * scaling;
+                }
+            },
+            .float32 => {
+                var spec: FFT_ORACLE.Spectrum = .{
+                    .re = [_]f32{0.0} ** common.FFT_LENGTH_BY_2_PLUS_1,
+                    .im = [_]f32{0.0} ** common.FFT_LENGTH_BY_2_PLUS_1,
+                };
+                for (0..common.FFT_LENGTH_BY_2_PLUS_1) |k| {
+                    spec.re[k] = X.re[k];
+                    spec.im[k] = if (k == 0 or k == common.FFT_LENGTH_BY_2) 0.0 else X.im[k];
+                }
+                var oracle_out = FFT_ORACLE.inverseReal(&spec);
+                for (0..common.FFT_LENGTH) |i| {
+                    oracle_out[i] *= @as(f32, @floatFromInt(common.FFT_LENGTH / 2));
+                    out[i] = oracle_out[i];
+                }
+            },
         }
-        var out = FFT.inverseReal(&spec);
-        for (0..common.FFT_LENGTH) |i| {
-            out[i] *= @as(f32, @floatFromInt(common.FFT_LENGTH / 2));
-        }
+
         return out;
     }
 
-    pub fn zero_padded_fft(self: *const Self, input: []const f32, window: Window) FftData {
-        std.debug.assert(input.len == common.FFT_LENGTH_BY_2);
+    pub fn zero_padded_fft(self: *const Self, input: []const f32, window: Window) !FftData {
+        if (input.len != common.FFT_LENGTH_BY_2) return error.InvalidLength;
         var data = [_]f32{0.0} ** common.FFT_LENGTH;
         switch (window) {
             .rectangular => {
@@ -66,21 +118,20 @@ pub const Aec3Fft = struct {
                     data[common.FFT_LENGTH_BY_2 + i] = input[i] * HANNING_64[i];
                 }
             },
-            .sqrt_hanning => @panic("Window::sqrt_hanning is not supported for zero_padded_fft"),
+            .sqrt_hanning => return error.UnsupportedWindow,
         }
         return self.fft(data[0..]);
     }
 
-    pub fn padded_fft(self: *const Self, x: []const f32, x_old: []const f32, window: Window) FftData {
-        std.debug.assert(x.len == common.FFT_LENGTH_BY_2);
-        std.debug.assert(x_old.len == common.FFT_LENGTH_BY_2);
+    pub fn padded_fft(self: *const Self, x: []const f32, x_old: []const f32, window: Window) !FftData {
+        if (x.len != common.FFT_LENGTH_BY_2 or x_old.len != common.FFT_LENGTH_BY_2) return error.InvalidLength;
         var data = [_]f32{0.0} ** common.FFT_LENGTH;
         switch (window) {
             .rectangular => {
                 @memcpy(data[0..common.FFT_LENGTH_BY_2], x_old);
                 @memcpy(data[common.FFT_LENGTH_BY_2..], x);
             },
-            .hanning => @panic("Window::hanning is not supported for padded_fft"),
+            .hanning => return error.UnsupportedWindow,
             .sqrt_hanning => {
                 for (0..common.FFT_LENGTH_BY_2) |i| {
                     data[i] = x_old[i] * SQRT_HANNING_128[i];

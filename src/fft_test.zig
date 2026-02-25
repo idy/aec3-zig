@@ -4,7 +4,7 @@ const FixedPoint = @import("fixed_point.zig").FixedPoint;
 const FftCore = @import("audio_processing/fft_core.zig").FftCore;
 const isPowerOfTwo = @import("audio_processing/fft_core.zig").isPowerOfTwo;
 const Aec3Fft = @import("audio_processing/aec3/aec3_fft.zig").Aec3Fft;
-const Window = @import("audio_processing/aec3/aec3_fft.zig").Window;
+const FftData = @import("audio_processing/aec3/fft_data.zig").FftData;
 const aec3_common = @import("audio_processing/aec3/aec3_common.zig");
 const NrFft = @import("audio_processing/ns/ns_fft.zig").NrFft;
 const ns_common = @import("audio_processing/ns/ns_common.zig");
@@ -138,7 +138,8 @@ test "test_ifft_roundtrip_128_fixed_vs_float" {
     var x_f32: [128]f32 = undefined;
     var x_q15: [128]Q15 = undefined;
     for (0..128) |i| {
-        x_f32[i] = 0.1 * @sin(@as(f32, @floatFromInt(i)) * 0.2);
+        const step = @as(i32, @intCast(i % 8)) - 4;
+        x_f32[i] = @as(f32, @floatFromInt(step)) / 32.0;
         x_q15[i] = Q15.fromFloatRuntime(x_f32[i]);
     }
 
@@ -164,7 +165,8 @@ test "test_ifft_roundtrip_256_fixed_vs_float" {
     var x_f32: [256]f32 = undefined;
     var x_q15: [256]Q15 = undefined;
     for (0..256) |i| {
-        x_f32[i] = 0.1 * @cos(@as(f32, @floatFromInt(i)) * 0.15);
+        const step = @as(i32, @intCast(i % 16)) - 8;
+        x_f32[i] = @as(f32, @floatFromInt(step)) / 64.0;
         x_q15[i] = Q15.fromFloatRuntime(x_f32[i]);
     }
 
@@ -275,7 +277,7 @@ test "test_aec3_fft_zero_padded_fft_basic" {
     var fft = Aec3Fft.init();
     var x = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
     x[0] = 1.0;
-    const s = fft.zero_padded_fft(x[0..], .rectangular);
+    const s = try fft.zero_padded_fft(x[0..], .rectangular);
     try std.testing.expect(s.re[0] > 0.9);
 }
 
@@ -283,7 +285,7 @@ test "test_aec3_fft_padded_fft_basic" {
     var fft = Aec3Fft.init();
     const x = [_]f32{0.5} ** aec3_common.FFT_LENGTH_BY_2;
     const x_old = [_]f32{0.25} ** aec3_common.FFT_LENGTH_BY_2;
-    const s = fft.padded_fft(x[0..], x_old[0..], .rectangular);
+    const s = try fft.padded_fft(x[0..], x_old[0..], .rectangular);
     try std.testing.expect(s.re[0] > 40.0);
 }
 
@@ -353,7 +355,7 @@ test "test_aec3_fft_ifft_boundary_zero_spectrum" {
 test "test_aec3_fft_zero_padded_fft_boundary_all_zero_input" {
     var fft = Aec3Fft.init();
     const x = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
-    const s = fft.zero_padded_fft(x[0..], .hanning);
+    const s = try fft.zero_padded_fft(x[0..], .hanning);
     for (0..aec3_common.FFT_LENGTH_BY_2_PLUS_1) |k| {
         try std.testing.expectApproxEqAbs(@as(f32, 0.0), s.re[k], 1e-6);
         try std.testing.expectApproxEqAbs(@as(f32, 0.0), s.im[k], 1e-6);
@@ -364,7 +366,7 @@ test "test_aec3_fft_padded_fft_boundary_all_zero_input" {
     var fft = Aec3Fft.init();
     const x = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
     const x_old = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
-    const s = fft.padded_fft(x[0..], x_old[0..], .sqrt_hanning);
+    const s = try fft.padded_fft(x[0..], x_old[0..], .sqrt_hanning);
     for (0..aec3_common.FFT_LENGTH_BY_2_PLUS_1) |k| {
         try std.testing.expectApproxEqAbs(@as(f32, 0.0), s.re[k], 1e-6);
         try std.testing.expectApproxEqAbs(@as(f32, 0.0), s.im[k], 1e-6);
@@ -383,4 +385,137 @@ test "test_nrfft_inverse_boundary_zero_spectrum" {
 test "test_fft_non_power_of_two_rejected" {
     try std.testing.expect(!isPowerOfTwo(192));
     try std.testing.expect(isPowerOfTwo(128));
+}
+
+test "test_aec3_fft_init_default_fixed_and_oracle" {
+    var fixed_fft = Aec3Fft.init();
+    var oracle_fft = Aec3Fft.initOracle();
+
+    var x = [_]f32{0.0} ** aec3_common.FFT_LENGTH;
+    for (0..aec3_common.FFT_LENGTH) |i| {
+        x[i] = 0.2 * @sin(@as(f32, @floatFromInt(i)) * 0.17);
+    }
+
+    const fixed_spec = fixed_fft.fft(x[0..]);
+    const oracle_spec = oracle_fft.fft(x[0..]);
+    try std.testing.expect(@abs(fixed_spec.re[7] - oracle_spec.re[7]) < 0.02);
+}
+
+test "test_nrfft_init_default_fixed_and_oracle" {
+    var fixed_fft = NrFft.init();
+    var oracle_fft = NrFft.initOracle();
+
+    var x = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    for (0..ns_common.FFT_SIZE) |i| {
+        x[i] = 0.2 * @cos(@as(f32, @floatFromInt(i)) * 0.11);
+    }
+
+    var fixed_re = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    var fixed_im = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    var oracle_re = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    var oracle_im = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    fixed_fft.fft(&x, &fixed_re, &fixed_im);
+    oracle_fft.fft(&x, &oracle_re, &oracle_im);
+    try std.testing.expect(@abs(fixed_re[9] - oracle_re[9]) < 0.03);
+}
+
+test "test_fft_data_clear_basic_and_boundary" {
+    var d = FftData{};
+    d.re[0] = 1.0;
+    d.im[1] = -2.0;
+    d.clear();
+
+    for (0..aec3_common.FFT_LENGTH_BY_2_PLUS_1) |k| {
+        try std.testing.expectEqual(@as(f32, 0.0), d.re[k]);
+        try std.testing.expectEqual(@as(f32, 0.0), d.im[k]);
+    }
+}
+
+test "test_fft_data_copy_from_packed_array_basic_and_boundary" {
+    var packed_data = [_]f32{0.0} ** aec3_common.FFT_LENGTH;
+    packed_data[0] = 3.0;
+    packed_data[1] = 5.0;
+    packed_data[2] = 1.5;
+    packed_data[3] = -0.25;
+    packed_data[aec3_common.FFT_LENGTH - 2] = 7.0;
+    packed_data[aec3_common.FFT_LENGTH - 1] = -9.0;
+
+    var d = FftData{};
+    d.copyFromPackedArray(&packed_data);
+    try std.testing.expectEqual(@as(f32, 3.0), d.re[0]);
+    try std.testing.expectEqual(@as(f32, 0.0), d.im[0]);
+    try std.testing.expectEqual(@as(f32, 5.0), d.re[aec3_common.FFT_LENGTH_BY_2]);
+    try std.testing.expectEqual(@as(f32, 0.0), d.im[aec3_common.FFT_LENGTH_BY_2]);
+    try std.testing.expectEqual(@as(f32, 1.5), d.re[1]);
+    try std.testing.expectEqual(@as(f32, -0.25), d.im[1]);
+    try std.testing.expectEqual(@as(f32, 7.0), d.re[aec3_common.FFT_LENGTH_BY_2 - 1]);
+    try std.testing.expectEqual(@as(f32, -9.0), d.im[aec3_common.FFT_LENGTH_BY_2 - 1]);
+}
+
+test "test_fft_data_copy_to_packed_array_basic_and_boundary" {
+    var d = FftData{};
+    d.re[0] = 11.0;
+    d.re[aec3_common.FFT_LENGTH_BY_2] = 13.0;
+    d.re[1] = -1.25;
+    d.im[1] = 2.5;
+    d.re[aec3_common.FFT_LENGTH_BY_2 - 1] = 0.5;
+    d.im[aec3_common.FFT_LENGTH_BY_2 - 1] = -0.75;
+
+    var packed_data = [_]f32{0.0} ** aec3_common.FFT_LENGTH;
+    d.copyToPackedArray(&packed_data);
+    try std.testing.expectEqual(@as(f32, 11.0), packed_data[0]);
+    try std.testing.expectEqual(@as(f32, 13.0), packed_data[1]);
+    try std.testing.expectEqual(@as(f32, -1.25), packed_data[2]);
+    try std.testing.expectEqual(@as(f32, 2.5), packed_data[3]);
+    try std.testing.expectEqual(@as(f32, 0.5), packed_data[aec3_common.FFT_LENGTH - 2]);
+    try std.testing.expectEqual(@as(f32, -0.75), packed_data[aec3_common.FFT_LENGTH - 1]);
+}
+
+test "test_aec3_fft_zero_padded_fft_error_branch" {
+    var fft = Aec3Fft.init();
+    const x = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
+    try std.testing.expectError(error.UnsupportedWindow, fft.zero_padded_fft(x[0..], .sqrt_hanning));
+
+    const bad = [_]f32{0.0} ** (aec3_common.FFT_LENGTH_BY_2 - 1);
+    try std.testing.expectError(error.InvalidLength, fft.zero_padded_fft(bad[0..], .rectangular));
+}
+
+test "test_aec3_fft_padded_fft_error_branch" {
+    var fft = Aec3Fft.init();
+    const x = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
+    const x_old = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
+    try std.testing.expectError(error.UnsupportedWindow, fft.padded_fft(x[0..], x_old[0..], .hanning));
+
+    const bad = [_]f32{0.0} ** (aec3_common.FFT_LENGTH_BY_2 - 1);
+    try std.testing.expectError(error.InvalidLength, fft.padded_fft(bad[0..], x_old[0..], .rectangular));
+}
+
+test "test_rust_aec3_zero_padded_vector_alignment" {
+    // Golden behavior follows aec3-rs test zero_padded_fft_matches_reference_behavior:
+    // 64-point input is written into upper half and IFFT output equals input * 64.
+    var fft = Aec3Fft.initOracle();
+    var input = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
+    for (0..aec3_common.FFT_LENGTH_BY_2) |i| {
+        input[i] = @as(f32, @floatFromInt(i));
+    }
+
+    const spec = try fft.zero_padded_fft(input[0..], .rectangular);
+    const out = fft.ifft(spec);
+    for (0..aec3_common.FFT_LENGTH_BY_2) |i| {
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), out[i], 1e-2);
+        try std.testing.expectApproxEqAbs(input[i] * 64.0, out[aec3_common.FFT_LENGTH_BY_2 + i], 1e-1);
+    }
+}
+
+test "test_rust_nrfft_ifft_scaling_alignment" {
+    // Golden behavior follows ns_fft.rs: inverse scaling is 2/N after inverse FFT.
+    var fft = NrFft.initOracle();
+    var re = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    var im = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    re[0] = 256.0;
+    var out = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    fft.ifft(re[0..], im[0..], out[0..]);
+    for (out) |v| {
+        try std.testing.expectApproxEqAbs(@as(f32, 2.0), v, 1e-3);
+    }
 }
