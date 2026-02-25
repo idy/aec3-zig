@@ -1,6 +1,6 @@
 //! FixedPoint 定点数类型
 //! Q15 格式: i32 存储，15位小数位
-//! 饱和算术，乘法使用 i64 中间值，除法使用倒数查表
+//! 饱和算术，乘法使用 i64 中间值，除法使用 i64 长除法
 
 const std = @import("std");
 
@@ -78,7 +78,7 @@ pub fn FixedPoint(comptime frac_bits: u8) type {
             return .{ .raw = @as(IntType, @intCast(shifted)) };
         }
 
-        /// 除法：使用倒数查表
+        /// 除法：使用 i64 长除法实现
         pub inline fn div(a: Self, b: Self) Self {
             // 特殊情况处理
             if (b.raw == 0) {
@@ -86,7 +86,7 @@ pub fn FixedPoint(comptime frac_bits: u8) type {
                 return .{ .raw = min_val };
             }
 
-            // 使用 i64 进行除法： (a * scale) / b
+            // i64 长除法： (a * scale) / b，避免中间结果溢出
             const a_scaled: AccumType = @as(AccumType, a.raw) << frac_bits;
             const result = @divTrunc(a_scaled, @as(AccumType, b.raw));
 

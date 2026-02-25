@@ -14,7 +14,7 @@ pub fn SampleOps(comptime T: type) type {
             if (T == f32) {
                 return a + b;
             } else {
-                return T.add(a, b);
+                return T.addSat(a, b);
             }
         }
 
@@ -22,7 +22,7 @@ pub fn SampleOps(comptime T: type) type {
             if (T == f32) {
                 return a - b;
             } else {
-                return T.sub(a, b);
+                return T.subSat(a, b);
             }
         }
 
@@ -30,7 +30,7 @@ pub fn SampleOps(comptime T: type) type {
             if (T == f32) {
                 return a * b;
             } else {
-                return T.mul(a, b);
+                return T.mulSat(a, b);
             }
         }
 
@@ -122,7 +122,7 @@ pub fn SampleOps(comptime T: type) type {
 
         pub inline fn minValue() T {
             if (T == f32) {
-                return std.math.floatMin(f32);
+                return -std.math.floatMax(f32);
             } else {
                 return T.minValue();
             }
