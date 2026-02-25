@@ -87,7 +87,7 @@ fn main() {
             let mut packed = [0.0f32; 128];
             for v in &mut packed {
                 seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-                let u = ((seed >> 40) as u32) as f32 / (u32::MAX as f32);
+                let u = ((seed >> 32) as u32) as f32 / (u32::MAX as f32);
                 *v = u * 2.0 - 1.0;
                 write_f32(&mut w, *v);
             }

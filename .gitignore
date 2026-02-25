@@ -3,3 +3,4 @@ zig-out/
 openteam/
 tests/golden_generator
 tests/rust_bench_foundation
+worklog.md

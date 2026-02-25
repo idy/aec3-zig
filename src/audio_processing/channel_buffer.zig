@@ -115,11 +115,15 @@ pub const IFChannelBuffer = struct {
 
     /// Creates a new IFChannelBuffer with the specified dimensions.
     pub fn new(allocator: std.mem.Allocator, num_frames: usize, num_channels: usize, num_bands: usize) !IFChannelBuffer {
+        var ibuf_buf = try ChannelBuffer(i16).new(allocator, num_frames, num_channels, num_bands);
+        errdefer ibuf_buf.deinit();
+
+        const fbuf_buf = try ChannelBuffer(f32).new(allocator, num_frames, num_channels, num_bands);
         return .{
             .ivalid = true,
-            .ibuf_ = try ChannelBuffer(i16).new(allocator, num_frames, num_channels, num_bands),
+            .ibuf_ = ibuf_buf,
             .fvalid = true,
-            .fbuf_ = try ChannelBuffer(f32).new(allocator, num_frames, num_channels, num_bands),
+            .fbuf_ = fbuf_buf,
         };
     }
 
@@ -238,4 +242,12 @@ test "test_new_rejects_invalid_dimensions" {
     try std.testing.expectError(error.InvalidChannelCount, ChannelBuffer(f32).new(arena.allocator(), 8, 0, 1));
     try std.testing.expectError(error.InvalidBandCount, ChannelBuffer(f32).new(arena.allocator(), 8, 1, 0));
     try std.testing.expectError(error.FrameCountNotDivisibleByBandCount, ChannelBuffer(f32).new(arena.allocator(), 7, 1, 2));
+}
+
+test "test_if_channel_buffer_new_cleans_up_on_second_allocation_failure" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 1 });
+    const alloc = failing.allocator();
+
+    try std.testing.expectError(error.OutOfMemory, IFChannelBuffer.new(alloc, 8, 1, 1));
+    try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
 }
