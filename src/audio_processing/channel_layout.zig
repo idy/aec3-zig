@@ -80,8 +80,14 @@ test "test_channel_count" {
 }
 
 test "test_guess_from_channel_count" {
+    try std.testing.expectEqual(ChannelLayout.none, ChannelLayout.guess_from_channel_count(0));
     try std.testing.expectEqual(ChannelLayout.mono, ChannelLayout.guess_from_channel_count(1));
     try std.testing.expectEqual(ChannelLayout.stereo, ChannelLayout.guess_from_channel_count(2));
+    try std.testing.expectEqual(ChannelLayout.layout_2_1, ChannelLayout.guess_from_channel_count(3));
+    try std.testing.expectEqual(ChannelLayout.quad, ChannelLayout.guess_from_channel_count(4));
+    try std.testing.expectEqual(ChannelLayout.layout_7_1, ChannelLayout.guess_from_channel_count(8));
+    try std.testing.expectEqual(ChannelLayout.layout_7_1, ChannelLayout.guess_from_channel_count(9));
+    try std.testing.expectEqual(ChannelLayout.layout_7_1, ChannelLayout.guess_from_channel_count(16));
 }
 
 test "test_channel_count_reference_mappings" {

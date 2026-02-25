@@ -578,3 +578,95 @@ test "test_validate_catches_invalid" {
     try std.testing.expect(!ok);
     try std.testing.expectEqual(@as(usize, 4), cfg.delay.down_sampling_factor);
 }
+
+test "test_default_and_init_matrix" {
+    const buffering = Buffering.default();
+    try std.testing.expectEqual(@as(usize, 250), buffering.excess_render_detection_interval_blocks);
+    try std.testing.expectEqual(@as(usize, 8), buffering.max_allowed_excess_render_blocks);
+
+    const delay = Delay.default();
+    try std.testing.expectEqual(@as(usize, 4), delay.down_sampling_factor);
+    try std.testing.expectEqual(@as(usize, 5), delay.default_delay);
+
+    const filter = Filter.default();
+    try std.testing.expectEqual(@as(usize, 13), filter.main.length_blocks);
+    try std.testing.expectEqual(@as(usize, 12), filter.main_initial.length_blocks);
+
+    const erle = Erle.default();
+    try std.testing.expectEqual(@as(f32, 1.0), erle.min);
+    const ep = EpStrength.default();
+    try std.testing.expectEqual(@as(f32, 0.83), ep.default_len);
+    const audibility = EchoAudibility.default();
+    try std.testing.expectEqual(@as(f32, 64.0), audibility.normal_render_limit);
+    const levels = RenderLevels.default();
+    try std.testing.expectEqual(@as(f32, 20.0), levels.poor_excitation_render_limit_ds8);
+    const removal = EchoRemovalControl.default();
+    try std.testing.expect(!removal.has_clock_drift);
+    const transparent = TransparentModeConfig.default();
+    try std.testing.expect(transparent.enabled);
+    const model = EchoModel.default();
+    try std.testing.expectEqual(@as(usize, 50), model.noise_floor_hold);
+    const suppressor = Suppressor.default();
+    try std.testing.expectEqual(@as(usize, 4), suppressor.nearend_average_blocks);
+
+    const mask = MaskingThresholds.init(-1.0, 101.0, 0.5);
+    try std.testing.expectEqual(@as(f32, -1.0), mask.enr_transparent);
+    try std.testing.expectEqual(@as(f32, 101.0), mask.enr_suppress);
+    const tuning = Tuning.init(mask, mask, 0.0, 100.0);
+    try std.testing.expectEqual(@as(f32, 0.0), tuning.max_inc_factor);
+    try std.testing.expectEqual(@as(f32, 100.0), tuning.max_dec_factor_lf);
+}
+
+test "test_validate_min_max_and_just_outside_bounds" {
+    var cfg = EchoCanceller3Config.default();
+
+    cfg.delay.default_delay = 0;
+    cfg.delay.num_filters = 5000;
+    cfg.delay.delay_headroom_samples = 5001; // just above max
+    cfg.delay.delay_estimate_smoothing = -0.01; // just below min
+    cfg.delay.delay_candidate_detection_threshold = 1.01; // just above max
+
+    cfg.filter.main.length_blocks = 0; // floor limit
+    cfg.filter.main.error_floor = -1.0;
+    cfg.filter.main.error_ceil = 100_000_001.0;
+
+    cfg.erle.min = 100_001.0;
+    cfg.erle.max_l = 1.0;
+    cfg.erle.max_h = 2.0;
+
+    cfg.suppressor.subband_nearend_detection.subband1.low = 66;
+    cfg.suppressor.subband_nearend_detection.subband1.high = 0;
+    cfg.suppressor.high_bands_suppression.max_gain_during_echo = 2.0;
+
+    const ok = cfg.validate();
+    try std.testing.expect(!ok);
+
+    try std.testing.expectEqual(@as(usize, 5000), cfg.delay.delay_headroom_samples);
+    try std.testing.expectEqual(@as(f32, 0.0), cfg.delay.delay_estimate_smoothing);
+    try std.testing.expectEqual(@as(f32, 1.0), cfg.delay.delay_candidate_detection_threshold);
+    try std.testing.expectEqual(@as(usize, 1), cfg.filter.main.length_blocks);
+    try std.testing.expectEqual(@as(f32, 0.0), cfg.filter.main.error_floor);
+    try std.testing.expectEqual(@as(f32, 100_000_000.0), cfg.filter.main.error_ceil);
+    try std.testing.expectEqual(@as(f32, 1.0), cfg.erle.min);
+    try std.testing.expectEqual(@as(usize, 65), cfg.suppressor.subband_nearend_detection.subband1.low);
+    try std.testing.expectEqual(@as(usize, 65), cfg.suppressor.subband_nearend_detection.subband1.high);
+    try std.testing.expectEqual(@as(f32, 1.0), cfg.suppressor.high_bands_suppression.max_gain_during_echo);
+}
+
+test "test_validate_sanitizes_nan_and_infinity" {
+    var cfg = EchoCanceller3Config.default();
+    cfg.delay.delay_estimate_smoothing = std.math.nan(f32);
+    cfg.filter.main.leakage_converged = std.math.inf(f32);
+    cfg.filter.main.leakage_diverged = -std.math.inf(f32);
+    cfg.echo_model.noise_gate_slope = std.math.nan(f32);
+    cfg.suppressor.normal_tuning.max_inc_factor = std.math.inf(f32);
+
+    const ok = cfg.validate();
+    try std.testing.expect(!ok);
+
+    try std.testing.expectEqual(@as(f32, 0.0), cfg.delay.delay_estimate_smoothing);
+    try std.testing.expectEqual(@as(f32, 1000.0), cfg.filter.main.leakage_converged);
+    try std.testing.expectEqual(@as(f32, 0.0), cfg.filter.main.leakage_diverged);
+    try std.testing.expectEqual(@as(f32, 0.0), cfg.echo_model.noise_gate_slope);
+    try std.testing.expectEqual(@as(f32, 100.0), cfg.suppressor.normal_tuning.max_inc_factor);
+}
