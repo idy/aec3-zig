@@ -156,3 +156,120 @@ test "complex FixedPoint Q15 mul" {
     try std.testing.expectApproxEqAbs(@as(f32, 0.25), result.re.toFloat(), 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.0), result.im.toFloat(), 0.001);
 }
+
+test "fixed_point Q15 div" {
+    const std = @import("std");
+    const FixedPoint = @import("fixed_point.zig").FixedPoint;
+
+    const Q15 = FixedPoint(15);
+
+    // Normal division cases
+    // 0.5 / 0.5 = 1.0
+    {
+        const a = Q15.fromFloat(0.5);
+        const b = Q15.fromFloat(0.5);
+        const result = Q15.div(a, b);
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), result.toFloat(), 0.0001);
+    }
+
+    // 0.25 / 0.5 = 0.5
+    {
+        const a = Q15.fromFloat(0.25);
+        const b = Q15.fromFloat(0.5);
+        const result = Q15.div(a, b);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.5), result.toFloat(), 0.0001);
+    }
+
+    // 0.75 / 0.25 = 3.0
+    {
+        const a = Q15.fromFloat(0.75);
+        const b = Q15.fromFloat(0.25);
+        const result = Q15.div(a, b);
+        try std.testing.expectApproxEqAbs(@as(f32, 3.0), result.toFloat(), 0.0001);
+    }
+
+    // Division by zero - positive / 0 should saturate to max_value
+    {
+        const a = Q15.fromFloat(1.0);
+        const zero = Q15.fromFloat(0.0);
+        const result = Q15.div(a, zero);
+        try std.testing.expectEqual(Q15.maxValue().raw, result.raw);
+    }
+
+    // Division by zero - negative / 0 should saturate to min_value
+    {
+        const a = Q15.fromFloat(-1.0);
+        const zero = Q15.fromFloat(0.0);
+        const result = Q15.div(a, zero);
+        try std.testing.expectEqual(Q15.minValue().raw, result.raw);
+    }
+
+    // Division by zero - zero / 0 should saturate to max_value (positive path)
+    {
+        const a = Q15.fromFloat(0.0);
+        const zero = Q15.fromFloat(0.0);
+        const result = Q15.div(a, zero);
+        try std.testing.expectEqual(Q15.maxValue().raw, result.raw);
+    }
+
+    // Sign combinations
+    // positive / positive = positive
+    {
+        const a = Q15.fromFloat(0.8);
+        const b = Q15.fromFloat(0.2);
+        const result = Q15.div(a, b);
+        try std.testing.expect(result.toFloat() > 0);
+        try std.testing.expectApproxEqAbs(@as(f32, 4.0), result.toFloat(), 0.001);
+    }
+
+    // negative / positive = negative
+    {
+        const a = Q15.fromFloat(-0.8);
+        const b = Q15.fromFloat(0.2);
+        const result = Q15.div(a, b);
+        try std.testing.expect(result.toFloat() < 0);
+        try std.testing.expectApproxEqAbs(@as(f32, -4.0), result.toFloat(), 0.001);
+    }
+
+    // positive / negative = negative
+    {
+        const a = Q15.fromFloat(0.8);
+        const b = Q15.fromFloat(-0.2);
+        const result = Q15.div(a, b);
+        try std.testing.expect(result.toFloat() < 0);
+        try std.testing.expectApproxEqAbs(@as(f32, -4.0), result.toFloat(), 0.001);
+    }
+
+    // negative / negative = positive
+    {
+        const a = Q15.fromFloat(-0.8);
+        const b = Q15.fromFloat(-0.2);
+        const result = Q15.div(a, b);
+        try std.testing.expect(result.toFloat() > 0);
+        try std.testing.expectApproxEqAbs(@as(f32, 4.0), result.toFloat(), 0.001);
+    }
+
+    // Edge cases
+    // 0 / anything = 0
+    {
+        const zero = Q15.fromFloat(0.0);
+        const b = Q15.fromFloat(0.5);
+        const result = Q15.div(zero, b);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), result.toFloat(), 0.0001);
+    }
+
+    // 1 / 1 = 1
+    {
+        const one = Q15.fromFloat(1.0);
+        const result = Q15.div(one, one);
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), result.toFloat(), 0.0001);
+    }
+
+    // Small value division
+    {
+        const a = Q15.fromFloat(0.1);
+        const b = Q15.fromFloat(0.1);
+        const result = Q15.div(a, b);
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), result.toFloat(), 0.001);
+    }
+}
