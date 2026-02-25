@@ -387,6 +387,60 @@ test "test_fft_non_power_of_two_rejected" {
     try std.testing.expect(isPowerOfTwo(128));
 }
 
+test "test_forward_oracle_float_dc_128" {
+    const FFT = FftCore(f32, 128);
+    const x = [_]f32{1.0} ** 128;
+    const spectrum = FFT.forwardOracleFloat(&x);
+
+    try std.testing.expectApproxEqAbs(@as(f32, 128.0), spectrum[0].re, 1e-3);
+    try std.testing.expectApproxEqAbs(@as(f32, 0.0), spectrum[0].im, 1e-6);
+    for (1..128) |k| {
+        try std.testing.expect(@abs(spectrum[k].re) < 1e-3);
+        try std.testing.expect(@abs(spectrum[k].im) < 1e-3);
+    }
+}
+
+test "test_forward_oracle_float_zero_boundary_128" {
+    const FFT = FftCore(f32, 128);
+    const x = [_]f32{0.0} ** 128;
+    const spectrum = FFT.forwardOracleFloat(&x);
+
+    for (0..128) |k| {
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), spectrum[k].re, 1e-7);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), spectrum[k].im, 1e-7);
+    }
+}
+
+test "test_inverse_oracle_float_roundtrip_128" {
+    const FFT = FftCore(f32, 128);
+    var x: [128]f32 = undefined;
+    for (0..128) |i| {
+        x[i] = 0.5 * @sin(@as(f32, @floatFromInt(i)) * 0.09) + 0.2 * @cos(@as(f32, @floatFromInt(i)) * 0.17);
+    }
+
+    const spectrum = FFT.forwardOracleFloat(&x);
+    const y = FFT.inverseOracleFloat(&spectrum);
+    try std.testing.expect(maxAbsDiff(x[0..], y[0..]) < 1e-5);
+}
+
+test "test_inverse_oracle_float_dc_nyquist_boundary_128" {
+    const FFT = FftCore(f32, 128);
+    const C32 = Complex(f32);
+    var spectrum = [_]C32{C32.zero()} ** 128;
+
+    // Only DC and Nyquist bins are non-zero for a purely real boundary case.
+    spectrum[0] = C32.init(128.0, 0.0);
+    spectrum[64] = C32.init(64.0, 0.0);
+
+    const y = FFT.inverseOracleFloat(&spectrum);
+
+    for (0..128) |n| {
+        const sign: f32 = if ((n & 1) == 0) 1.0 else -1.0;
+        const expected = 1.0 + 0.5 * sign;
+        try std.testing.expectApproxEqAbs(expected, y[n], 1e-5);
+    }
+}
+
 test "test_aec3_fft_init_default_fixed_and_oracle" {
     var fixed_fft = Aec3Fft.init();
     var oracle_fft = Aec3Fft.initOracle();
