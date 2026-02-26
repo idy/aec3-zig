@@ -19,6 +19,9 @@ pub const Aec3Fft = @import("audio_processing/aec3/aec3_fft.zig").Aec3Fft;
 pub const Aec3Window = @import("audio_processing/aec3/aec3_fft.zig").Window;
 pub const Aec3FftData = @import("audio_processing/aec3/fft_data.zig").FftData;
 pub const NrFft = @import("audio_processing/ns/ns_fft.zig").NrFft;
+pub const NsConfig = @import("audio_processing/ns/ns_config.zig").NsConfig;
+pub const SuppressionLevel = @import("audio_processing/ns/ns_config.zig").SuppressionLevel;
+pub const NoiseSuppressor = @import("audio_processing/ns/noise_suppressor.zig").NoiseSuppressor;
 
 // Foundation 模块
 pub const Aec3Common = @import("audio_processing/aec3/aec3_common.zig");
@@ -54,6 +57,21 @@ test {
     _ = @import("api/config.zig");
     _ = @import("api/control.zig");
     _ = @import("audio_processing/logging/apm_data_dumper.zig");
+    _ = @import("audio_processing/ns/ns_common.zig");
+    _ = @import("audio_processing/ns/ns_config.zig");
+    _ = @import("audio_processing/ns/ns_fft.zig");
+    _ = @import("audio_processing/ns/fast_math.zig");
+    _ = @import("audio_processing/ns/suppression_params.zig");
+    _ = @import("audio_processing/ns/prior_signal_model.zig");
+    _ = @import("audio_processing/ns/signal_model.zig");
+    _ = @import("audio_processing/ns/histograms.zig");
+    _ = @import("audio_processing/ns/quantile_noise_estimator.zig");
+    _ = @import("audio_processing/ns/prior_signal_model_estimator.zig");
+    _ = @import("audio_processing/ns/noise_estimator.zig");
+    _ = @import("audio_processing/ns/signal_model_estimator.zig");
+    _ = @import("audio_processing/ns/speech_probability_estimator.zig");
+    _ = @import("audio_processing/ns/wiener_filter.zig");
+    _ = @import("audio_processing/ns/noise_suppressor.zig");
     _ = @import("test.zig");
     _ = @import("fft_test.zig");
     _ = @import("foundation_extra_test.zig");

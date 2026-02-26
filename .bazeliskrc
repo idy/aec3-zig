@@ -1,0 +1,4 @@
+# Bazelisk configuration
+# 使用本地 Bazel 而不是从远程下载
+BAZELISK_SKIP_WRAPPER=true
+USE_BAZEL_VERSION=8.1.1
