@@ -63,36 +63,48 @@ pub const SplittingFilter = struct {
 
     pub fn set_num_channels(self: *SplittingFilter, num_channels: usize) !void {
         if (self.num_bands == 2) {
-            if (num_channels > self.two_band_states.len) {
-                // Need to grow - allocate new array and copy
+            if (num_channels != self.two_band_states.len) {
+                const old_len = self.two_band_states.len;
                 const new_states = try self.allocator.alloc(TwoBandStates, num_channels);
-                @memcpy(new_states[0..self.two_band_states.len], self.two_band_states);
-                @memset(new_states[self.two_band_states.len..], .{});
+                const copied = @min(old_len, num_channels);
+                if (copied > 0) {
+                    @memcpy(new_states[0..copied], self.two_band_states[0..copied]);
+                }
+                if (num_channels > copied) {
+                    @memset(new_states[copied..], .{});
+                }
                 self.allocator.free(self.two_band_states);
                 self.two_band_states = new_states;
             }
-            // Note: we don't shrink to avoid complex deinit/reinit logic
         } else {
-            if (num_channels > self.three_band_filter_banks.len) {
-                // Need to grow - allocate new filter banks
+            if (num_channels != self.three_band_filter_banks.len) {
+                const old_len = self.three_band_filter_banks.len;
                 const new_banks = try self.allocator.alloc(ThreeBandFilterBank, num_channels);
-                if (self.three_band_filter_banks.len > 0) {
-                    @memcpy(new_banks[0..self.three_band_filter_banks.len], self.three_band_filter_banks);
+                const copied = @min(old_len, num_channels);
+                if (copied > 0) {
+                    @memcpy(new_banks[0..copied], self.three_band_filter_banks[0..copied]);
                 }
 
-                var initialized: usize = self.three_band_filter_banks.len;
+                var initialized: usize = copied;
                 errdefer {
-                    var i: usize = self.three_band_filter_banks.len;
+                    var i: usize = copied;
                     while (i < initialized) : (i += 1) {
                         new_banks[i].deinit();
                     }
                     self.allocator.free(new_banks);
                 }
 
-                var i: usize = self.three_band_filter_banks.len;
+                var i: usize = old_len;
                 while (i < num_channels) : (i += 1) {
                     new_banks[i] = try ThreeBandFilterBank.new(self.allocator, self.num_frames_);
                     initialized += 1;
+                }
+
+                if (old_len > num_channels) {
+                    var j: usize = num_channels;
+                    while (j < old_len) : (j += 1) {
+                        self.three_band_filter_banks[j].deinit();
+                    }
                 }
 
                 self.allocator.free(self.three_band_filter_banks);
@@ -558,4 +570,29 @@ test "splitting_filter deinit boundary after channel growth" {
     sf.deinit();
 
     try std.testing.expect(true);
+}
+
+test "splitting_filter set_num_channels rollback on failed growth" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
+
+    var sf = try SplittingFilter.new(alloc, 2, 3, 480);
+    defer sf.deinit();
+
+    try sf.set_num_channels(1);
+    try std.testing.expectEqual(@as(usize, 1), sf.num_channels_);
+    try std.testing.expectEqual(@as(usize, 1), sf.three_band_filter_banks.len);
+
+    const old_channels = sf.num_channels_;
+    const old_len = sf.three_band_filter_banks.len;
+
+    failing.fail_index = failing.alloc_index; // fail next allocation in growth
+    try std.testing.expectError(error.OutOfMemory, sf.set_num_channels(2));
+
+    try std.testing.expectEqual(old_channels, sf.num_channels_);
+    try std.testing.expectEqual(old_len, sf.three_band_filter_banks.len);
+
+    failing.fail_index = std.math.maxInt(usize);
+    try sf.set_num_channels(2);
+    try std.testing.expectEqual(@as(usize, 2), sf.num_channels_);
 }

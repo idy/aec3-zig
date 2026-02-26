@@ -581,18 +581,37 @@ test "audio_buffer deinit boundary after split_merge" {
 }
 
 test "audio_buffer set_num_channels rollback on failure" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
 
-    // Create buffer with 3 bands (has splitting_filter)
-    var buffer = try AudioBuffer.new(arena.allocator(), 480, 2, 480, 2, 480);
+    // Create buffer with 3 bands (has splitting_filter), then shrink to force future growth allocation.
+    var buffer = try AudioBuffer.new(alloc, 480, 2, 480, 2, 480);
     defer buffer.deinit();
 
-    // This should succeed normally, but we verify state consistency
     try buffer.set_num_channels(1);
-    try std.testing.expectEqual(@as(usize, 1), buffer.num_channels());
 
-    // Should be able to change again
+    const old_num_channels = buffer.num_channels_;
+    const old_data_channels = buffer.data.num_channels();
+    const old_split_channels = buffer.split_data.?.num_channels();
+    const old_filter_channels = buffer.splitting_filter.?.num_channels_;
+    const old_filter_len = buffer.splitting_filter.?.three_band_filter_banks.len;
+
+    failing.fail_index = failing.alloc_index; // fail next growth allocation in SplittingFilter.set_num_channels
+    try std.testing.expectError(error.OutOfMemory, buffer.set_num_channels(2));
+
+    // State must remain unchanged after failure.
+    try std.testing.expectEqual(old_num_channels, buffer.num_channels_);
+    try std.testing.expectEqual(old_num_channels, buffer.num_channels());
+    try std.testing.expectEqual(old_data_channels, buffer.data.num_channels());
+    try std.testing.expectEqual(old_split_channels, buffer.split_data.?.num_channels());
+    try std.testing.expectEqual(old_filter_channels, buffer.splitting_filter.?.num_channels_);
+    try std.testing.expectEqual(old_filter_len, buffer.splitting_filter.?.three_band_filter_banks.len);
+
+    // After failure, operation can still succeed once allocation is available.
+    failing.fail_index = std.math.maxInt(usize);
     try buffer.set_num_channels(2);
     try std.testing.expectEqual(@as(usize, 2), buffer.num_channels());
+    try std.testing.expectEqual(@as(usize, 2), buffer.data.num_channels());
+    try std.testing.expectEqual(@as(usize, 2), buffer.split_data.?.num_channels());
+    try std.testing.expectEqual(@as(usize, 2), buffer.splitting_filter.?.num_channels_);
 }
