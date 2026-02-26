@@ -3,7 +3,7 @@ const ns_common = @import("ns_common.zig");
 const SignalModel = @import("signal_model.zig").SignalModel;
 
 /// Original Histogram struct (kept for compatibility)
-pub const Histogram = struct {
+const Histogram = struct {
     const kBins: usize = 64;
 
     counts: [kBins]u32 = [_]u32{0} ** kBins,

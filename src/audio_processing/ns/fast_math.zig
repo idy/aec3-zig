@@ -178,7 +178,7 @@ inline fn floatToLutIndex(x: f32, min_val: f32, max_val: f32) struct { idx: i32,
     return .{ .idx = @max(0, @min(Q15_LUT_SIZE - 2, idx)), .frac = @max(0, @min(Q15_ONE, frac)) };
 }
 
-pub fn FastMath(comptime T: type) type {
+fn FastMath(comptime T: type) type {
     return struct {
         const Self = @This();
 
