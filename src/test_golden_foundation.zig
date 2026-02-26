@@ -3,6 +3,7 @@ const std = @import("std");
 const aec3_common = @import("audio_processing/aec3/aec3_common.zig");
 const fft_data_mod = @import("audio_processing/aec3/fft_data.zig");
 const config = @import("api/config.zig");
+const ns_golden_tests = @import("test_golden_ns.zig");
 
 const golden_text = @embedFile("test_support/rust_foundation_golden_vectors.txt");
 
@@ -132,6 +133,10 @@ fn expectUlpEq(a: f32, b: f32, max_ulp: u32) !void {
     }
     const diff = ulpDiff(a, b);
     try std.testing.expect(diff <= max_ulp);
+}
+
+test "include ns golden suite" {
+    _ = ns_golden_tests;
 }
 
 test "golden_num_bands_for_rate" {
