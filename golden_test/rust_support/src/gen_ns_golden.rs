@@ -5,7 +5,7 @@
 //! This calls the official aec3::audio_processing::ns::NoiseSuppressor API
 //! to generate authoritative golden vectors for Zig cross-validation.
 //!
-//! Usage: cargo run --release --bin ns-golden-generator > testdata/rust_ns_golden_vectors.txt 2>/dev/null
+//! Usage: cargo run --release --bin ns-golden-generator > ../vectors/rust_ns_golden_vectors.txt 2>/dev/null
 
 use aec3::audio_processing::audio_buffer::AudioBuffer;
 use aec3::audio_processing::ns::noise_suppressor::NoiseSuppressor;
