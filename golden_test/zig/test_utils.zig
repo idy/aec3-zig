@@ -116,37 +116,139 @@ pub fn expectUlpEq(a: f32, b: f32, max_ulp: u32) !void {
     try std.testing.expect(diff <= max_ulp);
 }
 
-pub fn expectSliceApproxEq(expected: []const f32, actual: []const f32, max_rel_err: f32, max_abs_err: f32) !void {
-    std.debug.assert(expected.len == actual.len);
+pub const ErrorThresholds = struct {
+    max_abs: f32,
+    mean_abs: f32,
+    p95_abs: f32,
+};
 
-    var mismatch_count: usize = 0;
-    var max_rel_found: f32 = 0.0;
-    var max_abs_found: f32 = 0.0;
+pub const ErrorStats = struct {
+    max_abs: f32,
+    mean_abs: f32,
+    p95_abs: f32,
+    max_abs_index: usize,
+    expected_at_max: f32,
+    actual_at_max: f32,
+};
+
+pub const ErrorStatsError = error{
+    OutOfMemory,
+    EmptyInput,
+    LengthMismatch,
+    ApproxEqStatsFailed,
+};
+
+pub const print_error_stats: bool = false;
+
+pub fn computeErrorStats(
+    allocator: std.mem.Allocator,
+    expected: []const f32,
+    actual: []const f32,
+) ErrorStatsError!ErrorStats {
+    if (expected.len != actual.len) return ErrorStatsError.LengthMismatch;
+    if (expected.len == 0) return ErrorStatsError.EmptyInput;
+
+    var abs_errors = try allocator.alloc(f32, expected.len);
+    defer allocator.free(abs_errors);
+
+    var max_abs: f32 = 0.0;
+    var max_abs_index: usize = 0;
+    var expected_at_max: f32 = expected[0];
+    var actual_at_max: f32 = actual[0];
+    var sum_abs: f64 = 0.0;
 
     for (expected, actual, 0..) |e, a, i| {
-        const abs_diff = @abs(e - a);
-        const rel_diff = if (@abs(e) > 1e-10) abs_diff / @abs(e) else abs_diff;
+        const abs_err = @abs(e - a);
+        abs_errors[i] = abs_err;
+        sum_abs += abs_err;
 
-        max_rel_found = @max(max_rel_found, rel_diff);
-        max_abs_found = @max(max_abs_found, abs_diff);
-
-        if (rel_diff > max_rel_err and abs_diff > max_abs_err) {
-            if (mismatch_count < 5) {
-                std.debug.print(
-                    "Mismatch at [{}]: expected={e:.9}, actual={e:.9}, rel_err={e:.6}, abs_err={e:.9}\n",
-                    .{ i, e, a, rel_diff, abs_diff },
-                );
-            }
-            mismatch_count += 1;
+        if (abs_err > max_abs) {
+            max_abs = abs_err;
+            max_abs_index = i;
+            expected_at_max = e;
+            actual_at_max = a;
         }
     }
 
-    if (mismatch_count > 0) {
+    var i: usize = 1;
+    while (i < abs_errors.len) : (i += 1) {
+        const key = abs_errors[i];
+        var j = i;
+        while (j > 0 and abs_errors[j - 1] > key) : (j -= 1) {
+            abs_errors[j] = abs_errors[j - 1];
+        }
+        abs_errors[j] = key;
+    }
+
+    const n = abs_errors.len;
+    const rank_ceil = (95 * n + 99) / 100;
+    const p95_index = if (rank_ceil == 0) 0 else rank_ceil - 1;
+
+    return .{
+        .max_abs = max_abs,
+        .mean_abs = @as(f32, @floatCast(sum_abs / @as(f64, @floatFromInt(n)))),
+        .p95_abs = abs_errors[p95_index],
+        .max_abs_index = max_abs_index,
+        .expected_at_max = expected_at_max,
+        .actual_at_max = actual_at_max,
+    };
+}
+
+pub fn expectErrorStatsWithin(
+    allocator: std.mem.Allocator,
+    expected: []const f32,
+    actual: []const f32,
+    thresholds: ErrorThresholds,
+    context: []const u8,
+) ErrorStatsError!void {
+    const stats = computeErrorStats(allocator, expected, actual) catch |err| {
+        if (err == ErrorStatsError.LengthMismatch) {
+            std.debug.print(
+                "[{s}] error stats input length mismatch: expected_len={}, actual_len={}\n",
+                .{ context, expected.len, actual.len },
+            );
+        }
+        return err;
+    };
+
+    if (print_error_stats) {
         std.debug.print(
-            "Total mismatches: {}/{}, max_rel_err={e:.6}, max_abs_err={e:.9}\n",
-            .{ mismatch_count, expected.len, max_rel_found, max_abs_found },
+            "[{s}] error stats: len={}, max_abs={e:.9} @idx={}, mean_abs={e:.9}, p95_abs={e:.9}, expected@max={e:.9}, actual@max={e:.9}\n",
+            .{
+                context,
+                expected.len,
+                stats.max_abs,
+                stats.max_abs_index,
+                stats.mean_abs,
+                stats.p95_abs,
+                stats.expected_at_max,
+                stats.actual_at_max,
+            },
         );
-        return error.ApproxEqFailed;
+    }
+
+    const max_fail = stats.max_abs > thresholds.max_abs;
+    const mean_fail = stats.mean_abs > thresholds.mean_abs;
+    const p95_fail = stats.p95_abs > thresholds.p95_abs;
+
+    if (max_fail or mean_fail or p95_fail) {
+        std.debug.print(
+            "[{s}] error stats exceeded: len={}, max_abs={e:.9} (th={e:.9}) @idx={}, mean_abs={e:.9} (th={e:.9}), p95_abs={e:.9} (th={e:.9}), expected@max={e:.9}, actual@max={e:.9}\n",
+            .{
+                context,
+                expected.len,
+                stats.max_abs,
+                thresholds.max_abs,
+                stats.max_abs_index,
+                stats.mean_abs,
+                thresholds.mean_abs,
+                stats.p95_abs,
+                thresholds.p95_abs,
+                stats.expected_at_max,
+                stats.actual_at_max,
+            },
+        );
+        return ErrorStatsError.ApproxEqStatsFailed;
     }
 }
 
