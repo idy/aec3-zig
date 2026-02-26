@@ -80,3 +80,41 @@ test "golden_delay_jump_sequence_tracks_new_delay_after_switch" {
         }
     }
 }
+
+test "golden_silence_and_low_energy_trajectories_are_exact" {
+    const silence_delay = test_utils.parseNamedI32(golden_text, "DELAY_SILENCE_ESTIMATED_DELAY_SAMPLES", 220);
+    const silence_quality = test_utils.parseNamedI32(golden_text, "DELAY_SILENCE_ESTIMATED_QUALITY", 220);
+    const low_delay = test_utils.parseNamedI32(golden_text, "DELAY_LOW_ENERGY_ESTIMATED_DELAY_SAMPLES", 240);
+    const low_quality = test_utils.parseNamedI32(golden_text, "DELAY_LOW_ENERGY_ESTIMATED_QUALITY", 240);
+
+    for (silence_delay) |v| try std.testing.expectEqual(@as(i32, -1), v);
+    for (silence_quality) |v| try std.testing.expectEqual(@as(i32, -1), v);
+    for (low_delay) |v| try std.testing.expectEqual(@as(i32, -1), v);
+    for (low_quality) |v| try std.testing.expectEqual(@as(i32, -1), v);
+}
+
+test "golden_matched_filter_final_state_vectors_match" {
+    const lags = test_utils.parseNamedUsize(golden_text, "MATCHED_FILTER_FINAL_LAGS", 10);
+    const reliable = test_utils.parseNamedI32(golden_text, "MATCHED_FILTER_FINAL_RELIABLE", 10);
+    const updated = test_utils.parseNamedI32(golden_text, "MATCHED_FILTER_FINAL_UPDATED", 10);
+    const accuracy = test_utils.parseNamedF32(golden_text, "MATCHED_FILTER_FINAL_ACCURACY", 10);
+
+    try std.testing.expectEqualSlices(usize, &[_]usize{ 320, 557, 1182, 1358, 2028, 2187, 2355, 3015, 3187, 3760 }, lags[0..]);
+    try std.testing.expectEqualSlices(i32, &[_]i32{ 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, reliable[0..]);
+    try std.testing.expectEqualSlices(i32, &[_]i32{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }, updated[0..]);
+    try std.testing.expectApproxEqAbs(@as(f32, 111_374_544.0), accuracy[0], 0.5);
+    try std.testing.expectApproxEqAbs(@as(f32, -99_387_112.0), accuracy[9], 0.5);
+}
+
+test "golden_lag_aggregator_quality_and_render_mask_match" {
+    const quality = test_utils.parseNamedI32(golden_text, "LAG_AGGREGATOR_QUALITY_TRAJECTORY", 140);
+    const mask = test_utils.parseNamedF32(golden_text, "RENDER_SIGNAL_ANALYZER_MASK65", 65);
+
+    try std.testing.expectEqual(@as(i32, -1), quality[0]);
+    try std.testing.expectEqual(@as(i32, 0), quality[5]);
+    try std.testing.expectEqual(@as(i32, 1), quality[20]);
+    try std.testing.expectEqual(@as(i32, 1), quality[139]);
+
+    for (0..5) |i| try std.testing.expectEqual(@as(f32, 0.0), mask[i]);
+    for (5..65) |i| try std.testing.expectEqual(@as(f32, 1.0), mask[i]);
+}

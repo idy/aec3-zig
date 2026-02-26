@@ -69,9 +69,9 @@ pub const EchoPathDelayEstimator = struct {
         render_buffer: *const matched_filter.DownsampledRenderBuffer,
         capture_block: []const f32,
         scratch_downsampled_capture: []f32,
-    ) ?delay_estimate.DelayEstimate {
-        if (capture_block.len != aec3_common.BLOCK_SIZE) return null;
-        if (scratch_downsampled_capture.len < self.sub_block_size) return null;
+    ) !?delay_estimate.DelayEstimate {
+        if (capture_block.len != aec3_common.BLOCK_SIZE) return error.InvalidArgument;
+        if (scratch_downsampled_capture.len < self.sub_block_size) return error.InvalidArgument;
         downsample_by_factor(capture_block, scratch_downsampled_capture[0..self.sub_block_size], self.down_sampling_factor);
 
         self.matched_filter_inst.update(render_buffer, scratch_downsampled_capture[0..self.sub_block_size]);
@@ -129,12 +129,30 @@ test "echo_path_delay_estimator tracks fixed delay" {
             y.* = rb_storage[idx];
         }
 
-        _ = estimator.estimate_delay(&render_buffer, capture[0..], ds_capture[0..]);
+        _ = try estimator.estimate_delay(&render_buffer, capture[0..], ds_capture[0..]);
     }
 
-    const final = estimator.estimate_delay(&render_buffer, capture[0..], ds_capture[0..]);
+    const final = try estimator.estimate_delay(&render_buffer, capture[0..], ds_capture[0..]);
     try std.testing.expect(final != null);
     try std.testing.expect(@abs(@as(i32, @intCast(final.?.delay)) - @as(i32, @intCast(lag_ds * cfg.delay.down_sampling_factor))) <= 8);
+}
+
+test "echo_path_delay_estimator rejects invalid input lengths" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var cfg = config.EchoCanceller3Config.default();
+    var estimator = try EchoPathDelayEstimator.init(arena.allocator(), &cfg);
+    defer estimator.deinit();
+
+    var rb_storage = [_]f32{0.0} ** 512;
+    var render_buffer = matched_filter.DownsampledRenderBuffer.init(rb_storage[0..]);
+    var capture_bad = [_]f32{0.0} ** 10;
+    var capture_ok = [_]f32{0.0} ** aec3_common.BLOCK_SIZE;
+    var scratch = [_]f32{0.0} ** aec3_common.BLOCK_SIZE;
+
+    try std.testing.expectError(error.InvalidArgument, estimator.estimate_delay(&render_buffer, capture_bad[0..], scratch[0..]));
+    try std.testing.expectError(error.InvalidArgument, estimator.estimate_delay(&render_buffer, capture_ok[0..], scratch[0..3]));
 }
 
 test "echo_path_delay_estimator init rollback on allocator failure" {
@@ -154,4 +172,69 @@ test "echo_path_delay_estimator init rollback on allocator failure" {
     failing.fail_index = std.math.maxInt(usize);
     var ok = try EchoPathDelayEstimator.init(alloc, &cfg);
     defer ok.deinit();
+}
+
+test "echo_path_delay_estimator stays stable on 200-frame silence" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var cfg = config.EchoCanceller3Config.default();
+    cfg.delay.down_sampling_factor = 4;
+    var estimator = try EchoPathDelayEstimator.init(arena.allocator(), &cfg);
+    defer estimator.deinit();
+
+    var rb_storage = [_]f32{0.0} ** 1024;
+    var render_buffer = matched_filter.DownsampledRenderBuffer.init(rb_storage[0..]);
+    const capture = [_]f32{0.0} ** aec3_common.BLOCK_SIZE;
+    var ds_capture = [_]f32{0.0} ** aec3_common.BLOCK_SIZE;
+
+    for (0..200) |_| {
+        const out = try estimator.estimate_delay(&render_buffer, capture[0..], ds_capture[0..]);
+        try std.testing.expect(out == null);
+    }
+}
+
+test "echo_path_delay_estimator tracks delay jump" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var cfg = config.EchoCanceller3Config.default();
+    cfg.delay.down_sampling_factor = 4;
+    cfg.delay.num_filters = 10;
+    var estimator = try EchoPathDelayEstimator.init(arena.allocator(), &cfg);
+    defer estimator.deinit();
+
+    var rb_storage = [_]f32{0.0} ** 8192;
+    var render_buffer = matched_filter.DownsampledRenderBuffer.init(rb_storage[0..]);
+    var capture = [_]f32{0.0} ** aec3_common.BLOCK_SIZE;
+    var ds_capture = [_]f32{0.0} ** aec3_common.BLOCK_SIZE;
+
+    const old_lag_ds: usize = 20;
+    const new_lag_ds: usize = 35;
+    const switch_frame: usize = 350;
+    var first_new: ?usize = null;
+
+    for (0..1200) |frame| {
+        for (0..16) |k| {
+            const pos = (frame * 16 + k) % rb_storage.len;
+            rb_storage[pos] = @sin(@as(f32, @floatFromInt(frame * 16 + k)) * 0.09) * 12_000.0;
+            render_buffer.read = pos;
+        }
+
+        const lag = if (frame < switch_frame) old_lag_ds else new_lag_ds;
+        for (capture, 0..) |*y, i| {
+            const idx = (render_buffer.read + lag + capture.len - 1 - i / cfg.delay.down_sampling_factor) % rb_storage.len;
+            y.* = rb_storage[idx];
+        }
+
+        const out = try estimator.estimate_delay(&render_buffer, capture[0..], ds_capture[0..]);
+        if (frame >= switch_frame and first_new == null and out != null) {
+            if (@abs(@as(i32, @intCast(out.?.delay)) - @as(i32, @intCast(new_lag_ds * cfg.delay.down_sampling_factor))) <= 8) {
+                first_new = frame;
+            }
+        }
+    }
+
+    try std.testing.expect(first_new != null);
+    try std.testing.expect(first_new.? - switch_frame <= 420);
 }

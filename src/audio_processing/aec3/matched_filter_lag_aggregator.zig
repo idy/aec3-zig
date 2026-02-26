@@ -120,3 +120,22 @@ test "aggregator init handles out of memory" {
     var agg = try MatchedFilterLagAggregator.init(alloc, 64, .{ .initial = 5, .converged = 20 });
     defer agg.deinit();
 }
+
+test "aggregator rejects stable output during rapid lag jitter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var agg = try MatchedFilterLagAggregator.init(arena.allocator(), 256, .{ .initial = 5, .converged = 20 });
+    const estimates = [_]matched_filter.LagEstimate{matched_filter.LagEstimate.new(0.95, true, 0, true)};
+
+    var stable_count: usize = 0;
+    for (0..2000) |i| {
+        const lag = (i * 17) % 200;
+        var frame_est = estimates;
+        frame_est[0] = matched_filter.LagEstimate.new(0.95, true, lag, true);
+        const out = agg.aggregate(frame_est[0..]);
+        if (out != null) stable_count += 1;
+    }
+
+    try std.testing.expect(stable_count == 0);
+}

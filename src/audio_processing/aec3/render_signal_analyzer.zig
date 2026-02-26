@@ -1,8 +1,14 @@
 const std = @import("std");
 const config = @import("../../api/config.zig");
 const aec3_common = @import("aec3_common.zig");
+const FixedPoint = @import("../../fixed_point.zig").FixedPoint;
 
 const COUNTER_THRESHOLD: usize = 5;
+const Q15 = FixedPoint(15);
+
+fn q15_from_float(x: f32) i32 {
+    return Q15.fromFloatRuntime(x / 32_000.0).raw;
+}
 
 pub const RenderSignalAnalyzer = struct {
     strong_peak_freeze_duration: usize,
@@ -30,7 +36,9 @@ pub const RenderSignalAnalyzer = struct {
             self.narrow_band_counters = [_]usize{0} ** (aec3_common.FFT_LENGTH_BY_2 - 1);
         } else {
             for (1..aec3_common.FFT_LENGTH_BY_2) |k| {
-                if (spectrum[k] > 3.0 * @max(spectrum[k - 1], spectrum[k + 1])) {
+                const center = q15_from_float(spectrum[k]);
+                const neigh = @max(q15_from_float(spectrum[k - 1]), q15_from_float(spectrum[k + 1]));
+                if (center > 3 * neigh) {
                     self.narrow_band_counters[k - 1] += 1;
                 } else {
                     self.narrow_band_counters[k - 1] = 0;
@@ -66,10 +74,13 @@ pub const RenderSignalAnalyzer = struct {
             for (right_start..right_end) |k| non_peak_power = @max(non_peak_power, spectrum[k]);
         }
 
-        var max_abs: f32 = 0.0;
-        for (latest_time_block) |x| max_abs = @max(max_abs, @abs(x));
+        var max_abs_q15: i32 = 0;
+        for (latest_time_block) |x| max_abs_q15 = @max(max_abs_q15, @abs(q15_from_float(x)));
 
-        if (peak_bin > 0 and max_abs > 100.0 and peak_val > 100.0 * non_peak_power) {
+        if (peak_bin > 0 and
+            max_abs_q15 > q15_from_float(100.0) and
+            q15_from_float(peak_val) > 100 * q15_from_float(non_peak_power))
+        {
             self.narrow_peak_band_state = peak_bin;
             self.narrow_peak_counter = 0;
         }

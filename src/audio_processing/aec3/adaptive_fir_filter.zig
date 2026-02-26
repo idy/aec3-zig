@@ -1,32 +1,35 @@
 const std = @import("std");
+const FixedPoint = @import("../../fixed_point.zig").FixedPoint;
+
+const Q15 = FixedPoint(15);
 
 pub const AdaptiveFirFilter = struct {
     allocator: std.mem.Allocator,
-    taps: []f32,
-    history: []f32,
+    taps: []i32,
+    history: []i32,
     cursor: usize,
-    mu: f32,
-    epsilon: f32,
+    mu_q15: i32,
+    epsilon_q15: i32,
 
     pub fn init(allocator: std.mem.Allocator, num_taps: usize, mu: f32) !AdaptiveFirFilter {
         if (num_taps == 0) return error.InvalidConfiguration;
         if (!(mu > 0.0 and mu <= 1.0)) return error.InvalidConfiguration;
 
-        const taps = try allocator.alloc(f32, num_taps);
+        const taps = try allocator.alloc(i32, num_taps);
         errdefer allocator.free(taps);
-        @memset(taps, 0.0);
+        @memset(taps, 0);
 
-        const history = try allocator.alloc(f32, num_taps);
+        const history = try allocator.alloc(i32, num_taps);
         errdefer allocator.free(history);
-        @memset(history, 0.0);
+        @memset(history, 0);
 
         return .{
             .allocator = allocator,
             .taps = taps,
             .history = history,
             .cursor = 0,
-            .mu = mu,
-            .epsilon = 1e-6,
+            .mu_q15 = Q15.fromFloatRuntime(mu).raw,
+            .epsilon_q15 = Q15.fromFloatRuntime(1e-6).raw,
         };
     }
 
@@ -37,38 +40,44 @@ pub const AdaptiveFirFilter = struct {
     }
 
     pub fn reset(self: *AdaptiveFirFilter) void {
-        @memset(self.taps, 0.0);
-        @memset(self.history, 0.0);
+        @memset(self.taps, 0);
+        @memset(self.history, 0);
         self.cursor = 0;
     }
 
     pub fn process_sample(self: *AdaptiveFirFilter, x: f32, d: f32) f32 {
-        self.history[self.cursor] = x;
-        var y: f32 = 0.0;
-        var power: f32 = self.epsilon;
+        self.history[self.cursor] = Q15.fromFloatRuntime(x).raw;
+        const d_q15 = Q15.fromFloatRuntime(d).raw;
+        var y_q15: i64 = 0;
+        var power_q15: i64 = self.epsilon_q15;
 
         var idx = self.cursor;
         for (self.taps) |h| {
             const xv = self.history[idx];
-            y += h * xv;
-            power += xv * xv;
+            y_q15 += (@as(i64, h) * xv) >> 15;
+            power_q15 += (@as(i64, xv) * xv) >> 15;
             idx = if (idx == 0) self.history.len - 1 else idx - 1;
         }
 
-        const err = d - y;
-        const alpha = self.mu * err / power;
+        const err_q15 = @as(i64, d_q15) - y_q15;
+        const alpha_q15 = if (power_q15 == 0)
+            @as(i64, 0)
+        else
+            @divTrunc(@as(i64, self.mu_q15) * err_q15, power_q15);
 
         idx = self.cursor;
         for (self.taps) |*h| {
-            h.* += alpha * self.history[idx];
+            const delta = @divTrunc(alpha_q15 * self.history[idx], 1 << 15);
+            const updated = @as(i64, h.*) + delta;
+            h.* = @intCast(std.math.clamp(updated, @as(i64, std.math.minInt(i32)), @as(i64, std.math.maxInt(i32))));
             idx = if (idx == 0) self.history.len - 1 else idx - 1;
         }
 
         self.cursor = (self.cursor + 1) % self.history.len;
-        return err;
+        return Q15.fromRaw(@intCast(std.math.clamp(err_q15, @as(i64, std.math.minInt(i32)), @as(i64, std.math.maxInt(i32))))).toFloat();
     }
 
-    pub fn taps_view(self: *const AdaptiveFirFilter) []const f32 {
+    pub fn taps_raw_view(self: *const AdaptiveFirFilter) []const i32 {
         return self.taps;
     }
 };
@@ -91,7 +100,8 @@ test "adaptive_fir_filter converges on simple delay path" {
         _ = af.process_sample(x, d);
 
         var mse: f32 = 0.0;
-        for (af.taps_view(), true_taps) |a, b| {
+        for (af.taps_raw_view(), true_taps) |a_raw, b| {
+            const a = Q15.fromRaw(a_raw).toFloat();
             const diff = a - b;
             mse += diff * diff;
         }

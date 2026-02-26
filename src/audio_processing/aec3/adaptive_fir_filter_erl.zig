@@ -1,5 +1,8 @@
 const std = @import("std");
 const adaptive_fir_filter = @import("adaptive_fir_filter.zig");
+const FixedPoint = @import("../../fixed_point.zig").FixedPoint;
+
+const Q15 = FixedPoint(15);
 
 pub const AdaptiveFirFilterErl = struct {
     base: adaptive_fir_filter.AdaptiveFirFilter,
@@ -22,16 +25,22 @@ pub const AdaptiveFirFilterErl = struct {
         return err;
     }
 
-    pub fn taps_view(self: *const AdaptiveFirFilterErl) []const f32 {
-        return self.base.taps_view();
+    pub fn taps_raw_view(self: *const AdaptiveFirFilterErl) []const i32 {
+        return self.base.taps_raw_view();
     }
 
     fn apply_erl_constraint(self: *AdaptiveFirFilterErl) void {
         var energy: f32 = 0.0;
-        for (self.base.taps) |h| energy += h * h;
+        for (self.base.taps_raw_view()) |h| {
+            const hf = Q15.fromRaw(h).toFloat();
+            energy += hf * hf;
+        }
         if (energy <= self.max_gain_linear * self.max_gain_linear) return;
         const scale = self.max_gain_linear / @sqrt(energy);
-        for (self.base.taps) |*h| h.* *= scale;
+        for (self.base.taps) |*h| {
+            const hf = Q15.fromRaw(h.*).toFloat() * scale;
+            h.* = Q15.fromFloatRuntime(hf).raw;
+        }
     }
 };
 
@@ -45,7 +54,10 @@ test "adaptive_fir_filter_erl limits tap energy" {
     }
 
     var energy: f32 = 0.0;
-    for (filter.taps_view()) |h| energy += h * h;
+    for (filter.taps_raw_view()) |h| {
+        const hf = Q15.fromRaw(h).toFloat();
+        energy += hf * hf;
+    }
     try std.testing.expect(energy <= 0.25001);
 }
 

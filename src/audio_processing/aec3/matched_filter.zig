@@ -1,7 +1,9 @@
 const std = @import("std");
 const aec3_common = @import("aec3_common.zig");
+const FixedPoint = @import("../../fixed_point.zig").FixedPoint;
 
 const SATURATION_LIMIT: f32 = 32_000.0;
+const Q15 = FixedPoint(15);
 
 pub const DownsampledRenderBuffer = struct {
     buffer: []f32,
@@ -30,7 +32,7 @@ pub const MatchedFilter = struct {
     excitation_limit: f32,
     smoothing: f32,
     matching_filter_threshold: f32,
-    filters: []f32,
+    filters: []i32,
     lag_estimates_buf: []LagEstimate,
     filter_length: usize,
     num_filters: usize,
@@ -48,9 +50,9 @@ pub const MatchedFilter = struct {
         if (sub_block_size == 0 or window_size_sub_blocks == 0) return error.InvalidConfiguration;
         if (aec3_common.BLOCK_SIZE % sub_block_size != 0) return error.InvalidConfiguration;
         const filter_length = window_size_sub_blocks * sub_block_size;
-        const filters = try allocator.alloc(f32, num_matched_filters * filter_length);
+        const filters = try allocator.alloc(i32, num_matched_filters * filter_length);
         errdefer allocator.free(filters);
-        @memset(filters, 0.0);
+        @memset(filters, 0);
 
         const lag_estimates_buf = try allocator.alloc(LagEstimate, num_matched_filters);
         errdefer allocator.free(lag_estimates_buf);
@@ -77,7 +79,7 @@ pub const MatchedFilter = struct {
     }
 
     pub fn reset(self: *MatchedFilter) void {
-        @memset(self.filters, 0.0);
+        @memset(self.filters, 0);
         for (self.lag_estimates_buf) |*it| it.* = LagEstimate.new(0.0, false, 0, false);
     }
 
@@ -85,9 +87,19 @@ pub const MatchedFilter = struct {
         if (self.num_filters == 0) return;
         if (capture.len != self.sub_block_size or render_buffer.buffer.len == 0) return;
 
-        const x2_sum_threshold = @as(f32, @floatFromInt(self.filter_length)) * self.excitation_limit * self.excitation_limit;
-        var error_sum_anchor: f32 = 0.0;
-        for (capture) |y| error_sum_anchor += y * y;
+        var x_q15 = self.allocator.alloc(i32, render_buffer.buffer.len) catch return;
+        defer self.allocator.free(x_q15);
+        var y_q15 = self.allocator.alloc(i32, capture.len) catch return;
+        defer self.allocator.free(y_q15);
+
+        for (render_buffer.buffer, 0..) |x, i| x_q15[i] = q15_from_float(x);
+        for (capture, 0..) |y, i| y_q15[i] = q15_from_float(y);
+
+        const excitation_q15 = q15_from_float(self.excitation_limit);
+        const x2_sum_threshold: i64 = @as(i64, @intCast(self.filter_length)) *
+            @as(i64, excitation_q15) * @as(i64, excitation_q15);
+        var error_sum_anchor: i64 = 0;
+        for (y_q15) |y| error_sum_anchor += @as(i64, y) * y;
 
         const buffer_size = render_buffer.buffer.len;
         var alignment_shift: usize = 0;
@@ -95,15 +107,16 @@ pub const MatchedFilter = struct {
         for (0..self.num_filters) |index| {
             const start = (render_buffer.read + alignment_shift + self.sub_block_size - 1) % buffer_size;
             const filter = self.filters[filter_start .. filter_start + self.filter_length];
-            const core = matched_filter_core(start, x2_sum_threshold, self.smoothing, render_buffer.buffer, capture, filter);
+            const core = matched_filter_core_fixed(start, x2_sum_threshold, q15_from_float(self.smoothing), x_q15, y_q15, filter);
             const peak_index = detect_peak(filter);
             const absolute_lag = peak_index + alignment_shift;
+            const threshold_scaled: i64 = @intFromFloat(self.matching_filter_threshold * 1000.0);
             const reliable = peak_index > 2 and
                 peak_index + 10 < self.filter_length and
-                core.error_sum < self.matching_filter_threshold * error_sum_anchor;
+                core.error_sum * 1000 < threshold_scaled * error_sum_anchor;
 
             self.lag_estimates_buf[index] = LagEstimate.new(
-                error_sum_anchor - core.error_sum,
+                @floatFromInt(error_sum_anchor - core.error_sum),
                 reliable,
                 absolute_lag,
                 core.filters_updated,
@@ -125,12 +138,12 @@ pub const MatchedFilter = struct {
 
 const MatchedFilterCoreResult = struct {
     filters_updated: bool,
-    error_sum: f32,
+    error_sum: i64,
 };
 
-fn detect_peak(filter: []const f32) usize {
+fn detect_peak(filter: []const i32) usize {
     var best_index: usize = 0;
-    var best_value: f32 = 0.0;
+    var best_value: i32 = 0;
     for (filter, 0..) |x, i| {
         const ax = @abs(x);
         if (ax > best_value) {
@@ -141,38 +154,44 @@ fn detect_peak(filter: []const f32) usize {
     return best_index;
 }
 
-fn matched_filter_core(
+fn q15_from_float(x: f32) i32 {
+    return Q15.fromFloatRuntime(x / SATURATION_LIMIT).raw;
+}
+
+fn matched_filter_core_fixed(
     x_start_index_in: usize,
-    x2_sum_threshold: f32,
-    smoothing: f32,
-    x: []const f32,
-    y: []const f32,
-    h: []f32,
+    x2_sum_threshold: i64,
+    smoothing_q15: i32,
+    x: []const i32,
+    y: []const i32,
+    h: []i32,
 ) MatchedFilterCoreResult {
     var x_start_index = x_start_index_in;
     var filters_updated = false;
-    var error_sum: f32 = 0.0;
+    var error_sum: i64 = 0;
 
     for (y) |y_sample| {
-        var x2_sum: f32 = 0.0;
-        var s: f32 = 0.0;
+        var x2_sum: i64 = 0;
+        var s: i64 = 0;
         var x_index = x_start_index;
         for (h) |h_k| {
             const x_k = x[x_index];
-            x2_sum += x_k * x_k;
-            s += h_k * x_k;
+            x2_sum += @as(i64, x_k) * x_k;
+            s += (@as(i64, h_k) * x_k) >> 15;
             x_index = if (x_index + 1 < x.len) x_index + 1 else 0;
         }
 
-        const err = y_sample - s;
-        const saturation = y_sample >= SATURATION_LIMIT or y_sample <= -SATURATION_LIMIT;
+        const err: i64 = @as(i64, y_sample) - s;
+        const saturation = y_sample >= q15_from_float(SATURATION_LIMIT) or y_sample <= -q15_from_float(SATURATION_LIMIT);
         error_sum += err * err;
 
         if (x2_sum > x2_sum_threshold and !saturation) {
-            const alpha = smoothing * err / x2_sum;
             x_index = x_start_index;
             for (h) |*h_k| {
-                h_k.* += alpha * x[x_index];
+                const numerator: i128 = @as(i128, smoothing_q15) * err * x[x_index];
+                const delta: i64 = @intCast(@divTrunc(numerator, @as(i128, x2_sum)));
+                const updated: i64 = @as(i64, h_k.*) + delta;
+                h_k.* = @intCast(std.math.clamp(updated, @as(i64, std.math.minInt(i32)), @as(i64, std.math.maxInt(i32))));
                 x_index = if (x_index + 1 < x.len) x_index + 1 else 0;
             }
             filters_updated = true;
@@ -229,4 +248,124 @@ test "matched_filter init rollback on allocation failure" {
     failing.fail_index = std.math.maxInt(usize);
     var mf = try MatchedFilter.init(alloc, 16, 8, 4, 4, 1.0, 0.7, 0.5);
     defer mf.deinit();
+}
+
+test "matched_filter low excitation stays not updated and unreliable" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var backing = [_]f32{0.001} ** 256;
+    var render = DownsampledRenderBuffer.init(backing[0..]);
+    var capture = [_]f32{0.001} ** 16;
+    var mf = try MatchedFilter.init(arena.allocator(), 16, 8, 2, 4, 150.0, 0.7, 0.8);
+
+    for (0..80) |k| {
+        render.read = (k * 3) % backing.len;
+        mf.update(&render, capture[0..]);
+    }
+
+    for (mf.lag_estimates()) |est| {
+        try std.testing.expect(!est.updated);
+        try std.testing.expect(!est.reliable);
+    }
+}
+
+test "matched_filter rejects uncorrelated capture" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var backing = [_]f32{0.0} ** 512;
+    for (backing, 0..) |*x, i| x.* = @sin(@as(f32, @floatFromInt(i)) * 0.07) * 10_000.0;
+    var render = DownsampledRenderBuffer.init(backing[0..]);
+    var capture = [_]f32{0.0} ** 16;
+    var mf = try MatchedFilter.init(arena.allocator(), 16, 8, 3, 4, 0.05, 0.7, 0.8);
+
+    for (0..120) |frame| {
+        render.read = (frame * 5) % backing.len;
+        for (capture, 0..) |*y, i| {
+            y.* = @cos(@as(f32, @floatFromInt(frame * 16 + i)) * 0.11) * 9000.0;
+        }
+        mf.update(&render, capture[0..]);
+    }
+
+    for (mf.lag_estimates()) |est| {
+        try std.testing.expect(!est.reliable);
+    }
+}
+
+test "matched_filter fixed and float oracle produce close lag" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var backing = [_]f32{0.0} ** 1024;
+    for (backing, 0..) |*x, i| x.* = @sin(@as(f32, @floatFromInt(i)) * 0.11) * 12000.0;
+    var render = DownsampledRenderBuffer.init(backing[0..]);
+    render.read = 512;
+    var capture = [_]f32{0.0} ** 16;
+    for (capture, 0..) |*y, i| y.* = backing[(render.read + 73 + capture.len - 1 - i) % backing.len];
+
+    var fixed = try MatchedFilter.init(arena.allocator(), 16, 8, 1, 4, 0.05, 0.7, 0.8);
+    fixed.update(&render, capture[0..]);
+    const fixed_lag = fixed.lag_estimates()[0].lag;
+
+    var oracle = [_]f32{0.0} ** (16 * 8);
+    _ = matched_filter_core_float((render.read + 15) % backing.len, 64.0, 0.7, backing[0..], capture[0..], oracle[0..]);
+    const oracle_lag = detect_peak_float(oracle[0..]);
+    try std.testing.expect(@abs(@as(i32, @intCast(fixed_lag)) - @as(i32, @intCast(oracle_lag))) <= 2);
+}
+
+fn matched_filter_core_float(
+    x_start_index_in: usize,
+    x2_sum_threshold: f32,
+    smoothing: f32,
+    x: []const f32,
+    y: []const f32,
+    h: []f32,
+) MatchedFilterCoreResult {
+    var x_start_index = x_start_index_in;
+    var filters_updated = false;
+    var error_sum: i64 = 0;
+
+    for (y) |y_sample| {
+        var x2_sum: f32 = 0.0;
+        var s: f32 = 0.0;
+        var x_index = x_start_index;
+        for (h) |h_k| {
+            const x_k = x[x_index] / SATURATION_LIMIT;
+            x2_sum += x_k * x_k;
+            s += h_k * x_k;
+            x_index = if (x_index + 1 < x.len) x_index + 1 else 0;
+        }
+
+        const y_n = y_sample / SATURATION_LIMIT;
+        const err = y_n - s;
+        error_sum += @intFromFloat(err * err * 1_000_000.0);
+
+        if (x2_sum > x2_sum_threshold / (SATURATION_LIMIT * SATURATION_LIMIT)) {
+            const alpha = smoothing * err / x2_sum;
+            x_index = x_start_index;
+            for (h) |*h_k| {
+                h_k.* += alpha * (x[x_index] / SATURATION_LIMIT);
+                x_index = if (x_index + 1 < x.len) x_index + 1 else 0;
+            }
+            filters_updated = true;
+        }
+
+        x_start_index = if (x_start_index > 0) x_start_index - 1 else x.len - 1;
+    }
+
+    return .{ .filters_updated = filters_updated, .error_sum = error_sum };
+}
+
+fn detect_peak_float(filter: []const f32) usize {
+    var idx: usize = 0;
+    var best: f32 = 0.0;
+    for (filter, 0..) |v, i| {
+        const av = @abs(v);
+        if (av > best) {
+            best = av;
+            idx = i;
+        }
+    }
+    return idx;
 }
