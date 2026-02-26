@@ -1,6 +1,6 @@
 const std = @import("std");
 const aec3 = @import("aec3");
-const common = @import("common.zig");
+const test_utils = @import("test_utils.zig");
 
 const golden_text = @embedFile("../vectors/rust_fft_golden_vectors.txt");
 
@@ -16,8 +16,8 @@ test "golden_rust_aec3_zero_padded_forward_vector" {
     }
 
     const spec = try fft.zero_padded_fft(input[0..], .rectangular);
-    const re_golden = common.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_RE65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
-    const im_golden = common.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_IM65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
+    const re_golden = test_utils.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_RE65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
+    const im_golden = test_utils.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_IM65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
 
     var max_re_err: f32 = 0.0;
     var max_im_err: f32 = 0.0;
@@ -33,15 +33,15 @@ test "golden_rust_aec3_zero_padded_ifft_vector" {
     var fft = aec3.Aec3Fft.initOracle();
 
     var spec = aec3.Aec3FftData{};
-    const re_golden = common.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_RE65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
-    const im_golden = common.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_IM65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
+    const re_golden = test_utils.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_RE65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
+    const im_golden = test_utils.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_IM65", aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1);
     for (0..aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1) |k| {
         spec.re[k] = re_golden[k];
         spec.im[k] = if (k == 0 or k == aec3.Aec3Common.FFT_LENGTH_BY_2) 0.0 else im_golden[k];
     }
 
     const out = fft.ifft(spec);
-    const out_golden = common.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_IFFT128", aec3.Aec3Common.FFT_LENGTH);
+    const out_golden = test_utils.parseNamedF32(golden_text, "AEC3_ZERO_PADDED_IFFT128", aec3.Aec3Common.FFT_LENGTH);
 
     var max_err: f32 = 0.0;
     for (0..aec3.Aec3Common.FFT_LENGTH) |i| {
@@ -62,8 +62,8 @@ test "golden_rust_ns_forward_inverse_vectors" {
     var im = [_]f32{0.0} ** NS_FFT_SIZE;
     fft.fft(&input, &re, &im);
 
-    const re_golden = common.parseNamedF32(golden_text, "NS_RE129", NS_FFT_SIZE_BY_2_PLUS_1);
-    const im_golden = common.parseNamedF32(golden_text, "NS_IM129", NS_FFT_SIZE_BY_2_PLUS_1);
+    const re_golden = test_utils.parseNamedF32(golden_text, "NS_RE129", NS_FFT_SIZE_BY_2_PLUS_1);
+    const im_golden = test_utils.parseNamedF32(golden_text, "NS_IM129", NS_FFT_SIZE_BY_2_PLUS_1);
 
     var max_re_err: f32 = 0.0;
     var max_im_err: f32 = 0.0;
@@ -76,7 +76,7 @@ test "golden_rust_ns_forward_inverse_vectors" {
 
     var out = [_]f32{0.0} ** NS_FFT_SIZE;
     try fft.ifft(re[0..], im[0..], out[0..]);
-    const out_golden = common.parseNamedF32(golden_text, "NS_IFFT256", NS_FFT_SIZE);
+    const out_golden = test_utils.parseNamedF32(golden_text, "NS_IFFT256", NS_FFT_SIZE);
 
     var max_ifft_err: f32 = 0.0;
     for (0..NS_FFT_SIZE) |i| {

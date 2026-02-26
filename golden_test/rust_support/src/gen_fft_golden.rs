@@ -7,7 +7,7 @@
 //! floating-point ordering differences. Only use this to regenerate vectors
 //! if you have verified the output against the Zig FFT tests.
 //!
-//! The Zig golden suite in `golden_test/zig/fft_golden.zig` consumes these vectors.
+//! The Zig golden suite in `golden_test/zig/fft.zig` consumes these vectors.
 
 use std::f32::consts::PI;
 

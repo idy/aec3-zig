@@ -116,6 +116,40 @@ pub fn expectUlpEq(a: f32, b: f32, max_ulp: u32) !void {
     try std.testing.expect(diff <= max_ulp);
 }
 
+pub fn expectSliceApproxEq(expected: []const f32, actual: []const f32, max_rel_err: f32, max_abs_err: f32) !void {
+    std.debug.assert(expected.len == actual.len);
+
+    var mismatch_count: usize = 0;
+    var max_rel_found: f32 = 0.0;
+    var max_abs_found: f32 = 0.0;
+
+    for (expected, actual, 0..) |e, a, i| {
+        const abs_diff = @abs(e - a);
+        const rel_diff = if (@abs(e) > 1e-10) abs_diff / @abs(e) else abs_diff;
+
+        max_rel_found = @max(max_rel_found, rel_diff);
+        max_abs_found = @max(max_abs_found, abs_diff);
+
+        if (rel_diff > max_rel_err and abs_diff > max_abs_err) {
+            if (mismatch_count < 5) {
+                std.debug.print(
+                    "Mismatch at [{}]: expected={e:.9}, actual={e:.9}, rel_err={e:.6}, abs_err={e:.9}\n",
+                    .{ i, e, a, rel_diff, abs_diff },
+                );
+            }
+            mismatch_count += 1;
+        }
+    }
+
+    if (mismatch_count > 0) {
+        std.debug.print(
+            "Total mismatches: {}/{}, max_rel_err={e:.6}, max_abs_err={e:.9}\n",
+            .{ mismatch_count, expected.len, max_rel_found, max_abs_found },
+        );
+        return error.ApproxEqFailed;
+    }
+}
+
 fn orderedUlpBits(x: f32) i32 {
     const bits_u32: u32 = @bitCast(x);
     const bits_i32: i32 = @bitCast(bits_u32);

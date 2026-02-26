@@ -1,14 +1,14 @@
 const std = @import("std");
 const aec3 = @import("aec3");
-const common = @import("common.zig");
+const test_utils = @import("test_utils.zig");
 
 const golden_text = @embedFile("../vectors/rust_audio_infra_golden_vectors.txt");
 
 test "golden_sparse_fir_filter_two_block_outputs" {
-    const in1 = common.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK1_IN8", 8);
-    const in2 = common.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK2_IN8", 8);
-    const exp1 = common.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK1_OUT8", 8);
-    const exp2 = common.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK2_OUT8", 8);
+    const in1 = test_utils.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK1_IN8", 8);
+    const in2 = test_utils.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK2_IN8", 8);
+    const exp1 = test_utils.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK1_OUT8", 8);
+    const exp2 = test_utils.parseNamedF32(golden_text, "SPARSE_FIR_BLOCK2_OUT8", 8);
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -26,8 +26,8 @@ test "golden_sparse_fir_filter_two_block_outputs" {
 }
 
 test "golden_cascaded_biquad_filter_output" {
-    const input = common.parseNamedF32(golden_text, "CASCADED_BIQUAD_INPUT32", 32);
-    const expected = common.parseNamedF32(golden_text, "CASCADED_BIQUAD_OUTPUT32", 32);
+    const input = test_utils.parseNamedF32(golden_text, "CASCADED_BIQUAD_INPUT32", 32);
+    const expected = test_utils.parseNamedF32(golden_text, "CASCADED_BIQUAD_OUTPUT32", 32);
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -43,8 +43,8 @@ test "golden_cascaded_biquad_filter_output" {
 }
 
 test "golden_high_pass_filter_single_channel_output" {
-    const input = common.parseNamedF32(golden_text, "HIGH_PASS_INPUT64", 64);
-    const expected = common.parseNamedF32(golden_text, "HIGH_PASS_OUTPUT64", 64);
+    const input = test_utils.parseNamedF32(golden_text, "HIGH_PASS_INPUT64", 64);
+    const expected = test_utils.parseNamedF32(golden_text, "HIGH_PASS_OUTPUT64", 64);
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -60,8 +60,8 @@ test "golden_high_pass_filter_single_channel_output" {
 }
 
 test "golden_push_sinc_algorithmic_delay_seconds" {
-    const rates = common.parseNamedI32(golden_text, "PUSH_SINC_DELAY_RATES5", 5);
-    const expected = common.parseNamedF32(golden_text, "PUSH_SINC_DELAY_EXPECTED5", 5);
+    const rates = test_utils.parseNamedI32(golden_text, "PUSH_SINC_DELAY_RATES5", 5);
+    const expected = test_utils.parseNamedF32(golden_text, "PUSH_SINC_DELAY_EXPECTED5", 5);
 
     for (rates, expected) |rate, exp| {
         const actual = aec3.PushSincResampler.algorithmic_delay_seconds(rate);
@@ -70,8 +70,8 @@ test "golden_push_sinc_algorithmic_delay_seconds" {
 }
 
 test "golden_sinc_resampler_output48" {
-    const input = common.parseNamedF32(golden_text, "SINC_RESAMPLER_INPUT64", 64);
-    const expected = common.parseNamedF32(golden_text, "SINC_RESAMPLER_OUTPUT48", 48);
+    const input = test_utils.parseNamedF32(golden_text, "SINC_RESAMPLER_INPUT64", 64);
+    const expected = test_utils.parseNamedF32(golden_text, "SINC_RESAMPLER_OUTPUT48", 48);
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -103,11 +103,11 @@ test "golden_sinc_resampler_output48" {
 }
 
 test "golden_three_band_filter_bank_analysis_and_recon" {
-    const input = common.parseNamedF32(golden_text, "THREE_BAND_INPUT96", 96);
-    const exp_band0 = common.parseNamedF32(golden_text, "THREE_BAND_ANALYSIS_BAND0_32", 32);
-    const exp_band1 = common.parseNamedF32(golden_text, "THREE_BAND_ANALYSIS_BAND1_32", 32);
-    const exp_band2 = common.parseNamedF32(golden_text, "THREE_BAND_ANALYSIS_BAND2_32", 32);
-    const exp_recon = common.parseNamedF32(golden_text, "THREE_BAND_RECON96", 96);
+    const input = test_utils.parseNamedF32(golden_text, "THREE_BAND_INPUT96", 96);
+    const exp_band0 = test_utils.parseNamedF32(golden_text, "THREE_BAND_ANALYSIS_BAND0_32", 32);
+    const exp_band1 = test_utils.parseNamedF32(golden_text, "THREE_BAND_ANALYSIS_BAND1_32", 32);
+    const exp_band2 = test_utils.parseNamedF32(golden_text, "THREE_BAND_ANALYSIS_BAND2_32", 32);
+    const exp_recon = test_utils.parseNamedF32(golden_text, "THREE_BAND_RECON96", 96);
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

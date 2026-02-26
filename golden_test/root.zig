@@ -1,9 +1,9 @@
 //! Golden vector test entrypoint
 
 test {
-    _ = @import("zig/common.zig");
-    _ = @import("zig/foundation_golden.zig");
-    _ = @import("zig/ns_golden.zig");
-    _ = @import("zig/audio_infra_golden.zig");
-    _ = @import("zig/fft_golden.zig");
+    _ = @import("zig/test_utils.zig");
+    _ = @import("zig/foundation.zig");
+    _ = @import("zig/ns.zig");
+    _ = @import("zig/audio_infra.zig");
+    _ = @import("zig/fft.zig");
 }

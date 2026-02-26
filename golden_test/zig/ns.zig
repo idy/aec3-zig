@@ -14,72 +14,11 @@
 
 const std = @import("std");
 const aec3 = @import("aec3");
+const test_utils = @import("test_utils.zig");
 const NoiseSuppressor = aec3.NoiseSuppressor;
 const ns_common = aec3.NsCommon;
 
 const golden_text = @embedFile("../vectors/rust_ns_golden_vectors.txt");
-
-/// Parse a named f32 vector from golden text
-fn parseGoldenF32(comptime name: []const u8, comptime N: usize) ![N]f32 {
-    var out: [N]f32 = undefined;
-    var seen = [_]bool{false} ** N;
-    const prefix = std.fmt.comptimePrint("{s}[", .{name});
-
-    var it = std.mem.splitScalar(u8, golden_text, '\n');
-    while (it.next()) |raw_line| {
-        const line = std.mem.trim(u8, raw_line, " \t\r");
-        if (!std.mem.startsWith(u8, line, prefix)) continue;
-        if (std.mem.indexOf(u8, line, "]=") == null) continue;
-
-        const close = std.mem.indexOfScalarPos(u8, line, prefix.len, ']') orelse continue;
-        const eq = std.mem.indexOfScalarPos(u8, line, close + 1, '=') orelse continue;
-
-        const idx = std.fmt.parseInt(usize, line[prefix.len..close], 10) catch continue;
-        if (idx >= N) continue;
-        const val = std.fmt.parseFloat(f32, line[eq + 1 ..]) catch continue;
-
-        out[idx] = val;
-        seen[idx] = true;
-    }
-
-    for (seen, 0..) |ok, i| {
-        if (!ok) {
-            std.debug.print("Missing golden value for {s}[{}]\n", .{ name, i });
-            return error.GoldenVectorIncomplete;
-        }
-    }
-    return out;
-}
-
-/// Expect two arrays are within tolerance
-fn expectSliceApproxEq(expected: []const f32, actual: []const f32, max_rel_err: f32, max_abs_err: f32) !void {
-    std.debug.assert(expected.len == actual.len);
-
-    var max_rel_found: f32 = 0.0;
-    var max_abs_found: f32 = 0.0;
-    var mismatch_count: usize = 0;
-
-    for (expected, actual, 0..) |e, a, i| {
-        const abs_diff = @abs(e - a);
-        const rel_diff = if (@abs(e) > 1e-10) abs_diff / @abs(e) else abs_diff;
-
-        if (rel_diff > max_rel_found) max_rel_found = rel_diff;
-        if (abs_diff > max_abs_found) max_abs_found = abs_diff;
-
-        if (rel_diff > max_rel_err and abs_diff > max_abs_err) {
-            if (mismatch_count < 5) {
-                // Print first 5 mismatches for debugging
-                std.debug.print("Mismatch at [{}]: expected={e:.9}, actual={e:.9}, rel_err={e:.6}, abs_err={e:.9}\n", .{ i, e, a, rel_diff, abs_diff });
-            }
-            mismatch_count += 1;
-        }
-    }
-
-    if (mismatch_count > 0) {
-        std.debug.print("Total mismatches: {}/{}, max_rel_err={e:.6}, max_abs_err={e:.9}\n", .{ mismatch_count, expected.len, max_rel_found, max_abs_found });
-        return error.ApproxEqFailed;
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Golden Output Cross-Validation Tests
@@ -90,8 +29,8 @@ fn expectSliceApproxEq(expected: []const f32, actual: []const f32, max_rel_err: 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test "golden ns silence output cross-validation" {
-    const input = try parseGoldenF32("NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
-    const expected_output = try parseGoldenF32("NS_SILENCE_OUTPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
+    const expected_output = test_utils.parseNamedF32(golden_text, "NS_SILENCE_OUTPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = input;
@@ -109,12 +48,12 @@ test "golden ns silence output cross-validation" {
     try ns.process(&frame);
 
     // Cross-validation: strict per-sample golden alignment
-    try expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
+    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
 }
 
 test "golden ns low amplitude output cross-validation" {
-    const input = try parseGoldenF32("NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
-    const expected_output = try parseGoldenF32("NS_LOWAMP_OUTPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
+    const expected_output = test_utils.parseNamedF32(golden_text, "NS_LOWAMP_OUTPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = input;
@@ -132,12 +71,12 @@ test "golden ns low amplitude output cross-validation" {
     try ns.process(&frame);
 
     // Cross-validation: strict per-sample golden alignment
-    try expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
+    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
 }
 
 test "golden ns full scale output cross-validation" {
-    const input = try parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
-    const expected_output = try parseGoldenF32("NS_FULLSCALE_OUTPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
+    const expected_output = test_utils.parseNamedF32(golden_text, "NS_FULLSCALE_OUTPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = input;
@@ -156,12 +95,12 @@ test "golden ns full scale output cross-validation" {
 
     // Cross-validation: Both implementations should produce matching output
     // Using tighter tolerance since FFT implementations now match exactly
-    try expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
+    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
 }
 
 test "golden ns speech plus noise output cross-validation" {
-    const input = try parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
-    const expected_output = try parseGoldenF32("NS_SPEECHNOISE_OUTPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
+    const expected_output = test_utils.parseNamedF32(golden_text, "NS_SPEECHNOISE_OUTPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = input;
@@ -180,7 +119,7 @@ test "golden ns speech plus noise output cross-validation" {
 
     // Cross-validation: Both implementations should produce matching output
     // Using tighter tolerance since FFT implementations now match exactly
-    try expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
+    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -188,7 +127,7 @@ test "golden ns speech plus noise output cross-validation" {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test "golden input vectors are valid - silence" {
-    const input = try parseGoldenF32("NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
 
     // Verify all samples are near zero (silence)
     for (input) |s| {
@@ -197,7 +136,7 @@ test "golden input vectors are valid - silence" {
 }
 
 test "golden input vectors are valid - low amplitude" {
-    const input = try parseGoldenF32("NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
 
     // Verify amplitude is around 0.001
     var max_amp: f32 = 0.0;
@@ -209,7 +148,7 @@ test "golden input vectors are valid - low amplitude" {
 }
 
 test "golden input vectors are valid - full scale" {
-    const input = try parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
 
     // Verify amplitude is around 0.9
     var max_amp: f32 = 0.0;
@@ -221,7 +160,7 @@ test "golden input vectors are valid - full scale" {
 }
 
 test "golden input vectors are valid - speech plus noise" {
-    const input = try parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
 
     // Verify signal has expected characteristics (non-zero, within range)
     var max_amp: f32 = 0.0;
@@ -243,7 +182,7 @@ test "golden input vectors are valid - speech plus noise" {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test "ns processes silence input without error" {
-    const input = try parseGoldenF32("NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
@@ -276,7 +215,7 @@ test "ns processes silence input without error" {
 }
 
 test "ns processes low amplitude input" {
-    const input = try parseGoldenF32("NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
@@ -302,7 +241,7 @@ test "ns processes low amplitude input" {
 }
 
 test "ns processes full scale input without clipping" {
-    const input = try parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
@@ -330,7 +269,7 @@ test "ns processes full scale input without clipping" {
 }
 
 test "ns processes speech plus noise input" {
-    const input = try parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
+    const input = test_utils.parseNamedF32(golden_text, "NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
