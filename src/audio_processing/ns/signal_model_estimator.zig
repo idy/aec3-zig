@@ -8,6 +8,7 @@ const PriorSignalModelEstimator = @import("prior_signal_model_estimator.zig").Pr
 const Histograms = @import("histograms.zig").Histograms;
 
 const ONE_BY_FFT_SIZE_BY_2_PLUS_1: f32 = 1.0 / @as(f32, ns_common.FFT_SIZE_BY_2_PLUS_1);
+const ONE_BY_FFT_SIZE_BY_2: f32 = 1.0 / @as(f32, ns_common.FFT_SIZE_BY_2_PLUS_1 - 1);
 
 fn computeSpectralDiff(
     conservative_noise_spectrum: []const f32,
@@ -62,9 +63,9 @@ fn updateSpectralFlatness(
     for (signal_spectrum[1..]) |x| {
         avg_num += fast_math.logApproximation(x);
     }
-    avg_num *= ONE_BY_FFT_SIZE_BY_2_PLUS_1;
+    avg_num *= ONE_BY_FFT_SIZE_BY_2;
 
-    const avg_denom = (signal_spectral_sum - signal_spectrum[0]) * ONE_BY_FFT_SIZE_BY_2_PLUS_1;
+    const avg_denom = (signal_spectral_sum - signal_spectrum[0]) * ONE_BY_FFT_SIZE_BY_2;
 
     const spectral_tmp = fast_math.expApproximation(avg_num) / avg_denom;
     spectral_flatness.* += AVERAGING * (spectral_tmp - spectral_flatness.*);
