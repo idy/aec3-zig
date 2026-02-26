@@ -1,5 +1,7 @@
 //! Generates NS (Noise Suppression) golden vectors using aec3-rs reference implementation.
 //!
+//! Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
+//!
 //! This calls the official aec3::audio_processing::ns::NoiseSuppressor API
 //! to generate authoritative golden vectors for Zig cross-validation.
 //!

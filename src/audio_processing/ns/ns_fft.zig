@@ -93,13 +93,6 @@ pub const NrFft = struct {
         return .{ .mode = .float32 };
     }
 
-    /// Post-IFFT amplitude scale expected by callers.
-    /// - fixed_mcu_q15: inverseReal path requires 0.5 compensation in caller.
-    /// - float32 (DFT oracle): no extra compensation needed.
-    pub fn synthesisScale(self: *const Self) f32 {
-        return if (self.mode == .fixed_mcu_q15) 0.5 else 1.0;
-    }
-
     pub fn fft(self: *const Self, time_data: *const [common.FFT_SIZE]f32, real: *[common.FFT_SIZE]f32, imag: *[common.FFT_SIZE]f32) void {
         if (self.mode == .fixed_mcu_q15) {
             var fixed_in: [common.FFT_SIZE]Q15 = undefined;
@@ -122,9 +115,8 @@ pub const NrFft = struct {
     /// Inverse FFT with explicit error handling for insufficient buffer sizes.
     ///
     /// # Scaling Convention Note
-    /// - fixed_mcu_q15 路径：输出乘以 2.0，调用方需乘 0.5 复原幅度；
-    /// - float32 DFT 路径：输出已是标准 IDFT 结果，无需额外补偿。
-    /// 调用方应使用 `synthesisScale()` 获取一致的后缩放因子。
+    /// - fixed_mcu_q15 路径：输出乘以 2.0（与 Rust/Ooura 路径一致）；
+    /// - float32 DFT 路径：输出按 `2 / N` 归一化，与 aec3-rs `ns_fft.rs` 对齐。
     ///
     /// # Errors
     /// Returns FftError.InsufficientRealBuffer if real.len < FFT_SIZE_BY_2_PLUS_1

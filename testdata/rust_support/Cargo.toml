@@ -20,4 +20,6 @@ name = "ns-golden-generator"
 path = "src/gen_ns_golden.rs"
 
 [dependencies]
-aec3 = { path = "/Users/idy/Vibing/aec3-zig/main/openteam/docs/aec3-rs-src" }
+# Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
+# Use a fixed git revision for reproducible golden baseline across environments.
+aec3 = { git = "https://github.com/RubyBit/aec3-rs", rev = "667e9a8ede5905c0dce56e4a8b85880a020dd77a" }

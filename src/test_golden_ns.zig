@@ -1,10 +1,10 @@
 //! NS (Noise Suppression) Golden Vector Tests
 //!
-//! Validates NS implementation against Rust reference implementation golden vectors.
+//! Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
 //!
 //! IMPLEMENTATION ALIGNMENT:
-//! Rust golden 生成器与 Zig golden 路径统一使用 DFT，
-//! 因此 `NS_*_OUTPUT` 采用逐样本对齐断言。
+//! Rust golden generator and Zig implementation both use the same algorithmic approach
+//! from aec3-rs, enabling strict per-sample alignment of `NS_*_OUTPUT` vectors.
 //!
 //! Test categories:
 //! 1. Input vector parsing and validity
@@ -445,9 +445,78 @@ test "ns handles multiple consecutive frames" {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test "speech probability estimator produces valid probabilities" {
-    // NOTE: This test is temporarily disabled due to API changes
-    // The new SpeechProbabilityEstimator requires SignalModelEstimator integration
-    try std.testing.expect(true);
+    // Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
+    const SpeechProbabilityEstimator = @import("audio_processing/ns/speech_probability_estimator.zig").SpeechProbabilityEstimator;
+    const NumericMode = @import("numeric_mode.zig").NumericMode;
+
+    var spe = SpeechProbabilityEstimator.init(NumericMode.float32);
+
+    // Test with low SNR input (noise-like signal)
+    var prior_snr_low = [_]f32{0.01} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+    var post_snr_low = [_]f32{0.02} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+    var noise_spec_low = [_]f32{1.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+    var signal_spec_low = [_]f32{1.02} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+
+    spe.update(
+        100, // num_analyzed_frames
+        &prior_snr_low,
+        &post_snr_low,
+        &noise_spec_low,
+        &signal_spec_low,
+        1.02 * @as(f32, ns_common.FFT_SIZE_BY_2_PLUS_1),
+        1.0,
+    );
+
+    const probs_low = spe.probability();
+    var sum_low: f32 = 0.0;
+    for (probs_low) |p| {
+        // Assert 1: All probabilities are finite
+        try std.testing.expect(std.math.isFinite(p));
+        // Assert 2: All probabilities are in [0, 1] range
+        try std.testing.expect(p >= 0.0);
+        try std.testing.expect(p <= 1.0);
+        sum_low += p;
+    }
+    const avg_low = sum_low / ns_common.FFT_SIZE_BY_2_PLUS_1;
+
+    // Test with high SNR input (speech-like signal)
+    var spe_high = SpeechProbabilityEstimator.init(NumericMode.float32);
+    var prior_snr_high = [_]f32{10.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+    var post_snr_high = [_]f32{15.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+    var noise_spec_high = [_]f32{1.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+    var signal_spec_high = [_]f32{11.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
+
+    spe_high.update(
+        100,
+        &prior_snr_high,
+        &post_snr_high,
+        &noise_spec_high,
+        &signal_spec_high,
+        11.0 * @as(f32, ns_common.FFT_SIZE_BY_2_PLUS_1),
+        100.0,
+    );
+
+    const probs_high = spe_high.probability();
+    var sum_high: f32 = 0.0;
+    for (probs_high) |p| {
+        // Assert 1: All probabilities are finite
+        try std.testing.expect(std.math.isFinite(p));
+        // Assert 2: All probabilities are in [0, 1] range
+        try std.testing.expect(p >= 0.0);
+        try std.testing.expect(p <= 1.0);
+        sum_high += p;
+    }
+    const avg_high = sum_high / ns_common.FFT_SIZE_BY_2_PLUS_1;
+
+    // Assert 3: High SNR should have higher speech probability than low SNR
+    // This validates the estimator can distinguish between speech and noise
+    try std.testing.expect(avg_high > avg_low);
+
+    // Assert 4: Both averages should be in valid probability range [0, 1]
+    try std.testing.expect(avg_low >= 0.0);
+    try std.testing.expect(avg_low <= 1.0);
+    try std.testing.expect(avg_high >= 0.0);
+    try std.testing.expect(avg_high <= 1.0);
 }
 
 test "wiener filter gain is always valid" {

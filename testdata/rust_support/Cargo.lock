@@ -5,6 +5,7 @@ version = 4
 [[package]]
 name = "aec3"
 version = "0.1.5"
+source = "git+https://github.com/RubyBit/aec3-rs?rev=667e9a8ede5905c0dce56e4a8b85880a020dd77a#667e9a8ede5905c0dce56e4a8b85880a020dd77a"
 dependencies = [
  "crossbeam-channel",
  "log",
