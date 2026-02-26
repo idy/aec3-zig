@@ -4,9 +4,6 @@ const QuantileNoiseEstimator = @import("quantile_noise_estimator.zig").QuantileN
 const SuppressionParams = @import("suppression_params.zig").SuppressionParams;
 const fast_math = @import("fast_math.zig");
 
-/// Short startup phase blocks (from aec3-rs ns_common)
-const SHORT_STARTUP_PHASE_BLOCKS: i32 = 50;
-
 /// Noise spectrum estimator (matches aec3-rs implementation)
 pub const NoiseEstimator = struct {
     suppression_params: SuppressionParams,
@@ -48,7 +45,7 @@ pub const NoiseEstimator = struct {
             &self.noise_spectrum,
         );
 
-        if (num_analyzed_frames < SHORT_STARTUP_PHASE_BLOCKS) {
+        if (num_analyzed_frames < ns_common.SHORT_STARTUP_PHASE_BLOCKS) {
             const START_BAND: usize = 5;
             var sum_log_i_log_magn: f32 = 0.0;
             var sum_log_i: f32 = 0.0;
@@ -96,12 +93,12 @@ pub const NoiseEstimator = struct {
                 };
             }
 
-            const ONE_BY_SHORT_STARTUP_PHASE_BLOCKS: f32 = 1.0 / @as(f32, SHORT_STARTUP_PHASE_BLOCKS);
+            const ONE_BY_SHORT_STARTUP: f32 = 1.0 / @as(f32, ns_common.SHORT_STARTUP_PHASE_BLOCKS);
             for (0..ns_common.FFT_SIZE_BY_2_PLUS_1) |i| {
                 var tmp = self.noise_spectrum[i] * @as(f32, @floatFromInt(num_analyzed_frames));
-                const tmp2 = self.parametric_noise_spectrum[i] * @as(f32, @floatFromInt(SHORT_STARTUP_PHASE_BLOCKS - num_analyzed_frames));
+                const tmp2 = self.parametric_noise_spectrum[i] * @as(f32, @floatFromInt(ns_common.SHORT_STARTUP_PHASE_BLOCKS - num_analyzed_frames));
                 tmp += tmp2 * one_by_num_analyzed_frames_plus_1;
-                tmp *= ONE_BY_SHORT_STARTUP_PHASE_BLOCKS;
+                tmp *= ONE_BY_SHORT_STARTUP;
                 self.noise_spectrum[i] = tmp;
             }
         }

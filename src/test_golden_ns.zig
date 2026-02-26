@@ -447,9 +447,8 @@ test "ns handles multiple consecutive frames" {
 test "speech probability estimator produces valid probabilities" {
     // Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
     const SpeechProbabilityEstimator = @import("audio_processing/ns/speech_probability_estimator.zig").SpeechProbabilityEstimator;
-    const NumericMode = @import("numeric_mode.zig").NumericMode;
 
-    var spe = SpeechProbabilityEstimator.init(NumericMode.float32);
+    var spe = SpeechProbabilityEstimator.init();
 
     // Test with low SNR input (noise-like signal)
     var prior_snr_low = [_]f32{0.01} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
@@ -480,7 +479,7 @@ test "speech probability estimator produces valid probabilities" {
     const avg_low = sum_low / ns_common.FFT_SIZE_BY_2_PLUS_1;
 
     // Test with high SNR input (speech-like signal)
-    var spe_high = SpeechProbabilityEstimator.init(NumericMode.float32);
+    var spe_high = SpeechProbabilityEstimator.init();
     var prior_snr_high = [_]f32{10.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
     var post_snr_high = [_]f32{15.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;
     var noise_spec_high = [_]f32{1.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1;

@@ -2,30 +2,18 @@ const std = @import("std");
 const ns_common = @import("ns_common.zig");
 const SignalModelEstimator = @import("signal_model_estimator.zig").SignalModelEstimator;
 const fast_math = @import("fast_math.zig");
-const NumericMode = @import("../../numeric_mode.zig").NumericMode;
-
-/// Feature update window size (from aec3-rs ns_common)
-const FEATURE_UPDATE_WINDOW_SIZE: i32 = 500;
-
-/// Long startup phase blocks (from aec3-rs ns_common)
-const LONG_STARTUP_PHASE_BLOCKS: i32 = 200;
-
-/// LRT feature threshold
-const LRT_FEATURE_THR: f32 = 0.5;
 
 /// Speech probability estimation for NS (matches aec3-rs implementation)
 pub const SpeechProbabilityEstimator = struct {
     signal_model_estimator: SignalModelEstimator,
     prior_speech_prob: f32,
     speech_probability: [ns_common.FFT_SIZE_BY_2_PLUS_1]f32,
-    _numeric_mode: NumericMode,
 
-    pub fn init(numeric_mode: NumericMode) SpeechProbabilityEstimator {
+    pub fn init() SpeechProbabilityEstimator {
         return .{
             .signal_model_estimator = SignalModelEstimator.init(),
             .prior_speech_prob = 0.5,
             .speech_probability = [_]f32{0.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1,
-            ._numeric_mode = numeric_mode,
         };
     }
 
@@ -39,7 +27,7 @@ pub const SpeechProbabilityEstimator = struct {
         signal_spectral_sum: f32,
         signal_energy: f32,
     ) void {
-        if (num_analyzed_frames < LONG_STARTUP_PHASE_BLOCKS) {
+        if (num_analyzed_frames < ns_common.LONG_STARTUP_PHASE_BLOCKS) {
             self.signal_model_estimator.adjustNormalization(num_analyzed_frames, signal_energy);
         }
 

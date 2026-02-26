@@ -126,7 +126,7 @@ pub const NoiseSuppressor = struct {
         return .{
             .fft = if (config.numeric_mode == .float32) NrFft.initOracle() else NrFft.init(),
             .noise_estimator = NoiseEstimator.init(params),
-            .speech_prob_estimator = SpeechProbabilityEstimator.init(config.numeric_mode),
+            .speech_prob_estimator = SpeechProbabilityEstimator.init(),
             .wiener_filter = WienerFilter.init(params),
             .prev_analysis_signal_spectrum = [_]f32{1.0} ** ns_common.FFT_SIZE_BY_2_PLUS_1,
             .analyze_analysis_memory = [_]f32{0.0} ** ns_common.OVERLAP_SIZE,

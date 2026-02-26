@@ -5,12 +5,6 @@ const Histograms = @import("histograms.zig").Histograms;
 const HISTOGRAM_SIZE = @import("histograms.zig").HISTOGRAM_SIZE;
 const PriorSignalModel = @import("prior_signal_model.zig").PriorSignalModel;
 
-// Constants from ns_common
-const BIN_SIZE_LRT: f32 = 0.1;
-const BIN_SIZE_SPEC_FLAT: f32 = 0.05;
-const BIN_SIZE_SPEC_DIFF: f32 = 0.1;
-const FEATURE_UPDATE_WINDOW_SIZE: i32 = 500;
-
 fn findFirstOfTwoLargestPeaks(
     bin_size: f32,
     histogram: []const i32,
@@ -59,7 +53,7 @@ fn updateLrt(
     var count: i32 = 0;
 
     for (0..10) |i| {
-        const bin_mid = (@as(f32, @floatFromInt(i)) + 0.5) * BIN_SIZE_LRT;
+        const bin_mid = (@as(f32, @floatFromInt(i)) + 0.5) * ns_common.BIN_SIZE_LRT;
         const value = lrt_histogram[i];
         average += @as(f32, @floatFromInt(value)) * bin_mid;
         count += value;
@@ -69,13 +63,13 @@ fn updateLrt(
     }
 
     for (0..HISTOGRAM_SIZE) |i| {
-        const bin_mid = (@as(f32, @floatFromInt(i)) + 0.5) * BIN_SIZE_LRT;
+        const bin_mid = (@as(f32, @floatFromInt(i)) + 0.5) * ns_common.BIN_SIZE_LRT;
         const value = lrt_histogram[i];
         average_squared += @as(f32, @floatFromInt(value)) * bin_mid * bin_mid;
         average_compl += @as(f32, @floatFromInt(value)) * bin_mid;
     }
 
-    const one_by_window: f32 = 1.0 / @as(f32, FEATURE_UPDATE_WINDOW_SIZE);
+    const one_by_window: f32 = 1.0 / @as(f32, ns_common.FEATURE_UPDATE_WINDOW_SIZE);
     average_squared *= one_by_window;
     average_compl *= one_by_window;
 
@@ -107,11 +101,11 @@ pub const PriorSignalModelEstimator = struct {
             &low_lrt_fluctuations,
         );
 
-        const flat_result = findFirstOfTwoLargestPeaks(BIN_SIZE_SPEC_FLAT, histograms.getSpectralFlatness());
+        const flat_result = findFirstOfTwoLargestPeaks(ns_common.BIN_SIZE_SPEC_FLAT, histograms.getSpectralFlatness());
         const spectral_flatness_peak_position = flat_result.position;
         const spectral_flatness_peak_weight = flat_result.weight;
 
-        const diff_result = findFirstOfTwoLargestPeaks(BIN_SIZE_SPEC_DIFF, histograms.getSpectralDiff());
+        const diff_result = findFirstOfTwoLargestPeaks(ns_common.BIN_SIZE_SPEC_DIFF, histograms.getSpectralDiff());
         const spectral_diff_peak_position = diff_result.position;
         const spectral_diff_peak_weight = diff_result.weight;
 
