@@ -38,10 +38,11 @@ pub const AudioBuffer = struct {
 
         var split_data: ?ChannelBuffer(f32) = null;
         var splitting_filter: ?SplittingFilter = null;
+        errdefer if (split_data) |*s| s.deinit();
+        errdefer if (splitting_filter) |*f| f.deinit();
 
         if (resolved_num_bands > 1) {
             split_data = try ChannelBuffer(f32).new(allocator, buffer_num_frames, buffer_num_channels, resolved_num_bands);
-            errdefer if (split_data) |*s| s.deinit();
             splitting_filter = try SplittingFilter.new(allocator, buffer_num_channels, resolved_num_bands, buffer_num_frames);
         }
 
