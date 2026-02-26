@@ -5,10 +5,60 @@ const NumericMode = @import("../../numeric_mode.zig").NumericMode;
 const profileFor = @import("../../numeric_profile.zig").profileFor;
 
 const FixedProfile = profileFor(.fixed_mcu_q15);
-const OracleProfile = profileFor(.float32);
 const Q15 = FixedProfile.Sample;
 const FFT_FIXED = FftCore(Q15, common.FFT_SIZE);
-const FFT_ORACLE = FftCore(OracleProfile.Sample, common.FFT_SIZE);
+
+// DFT reference path for float32 oracle mode.
+// 与 AEC3RS golden 生成器保持一致，确保逐样本 golden 对齐可复核。
+fn dftForwardReal(time_data: *const [common.FFT_SIZE]f32, real: *[common.FFT_SIZE]f32, imag: *[common.FFT_SIZE]f32) void {
+    for (0..common.FFT_SIZE) |i| {
+        real[i] = 0.0;
+        imag[i] = 0.0;
+    }
+
+    const bins = common.FFT_SIZE_BY_2_PLUS_1;
+    const n_f = @as(f32, @floatFromInt(common.FFT_SIZE));
+    for (0..bins) |k| {
+        var re: f32 = 0.0;
+        var im: f32 = 0.0;
+        const kf = @as(f32, @floatFromInt(k));
+
+        for (0..common.FFT_SIZE) |n| {
+            const nf = @as(f32, @floatFromInt(n));
+            const angle = 2.0 * std.math.pi * kf * nf / n_f;
+            const x = time_data[n];
+            re += x * @cos(angle);
+            im -= x * @sin(angle);
+        }
+
+        real[k] = re;
+        imag[k] = if (k == 0 or k == bins - 1) 0.0 else im;
+    }
+}
+
+fn dftInverseReal(real: []const f32, imag: []const f32, time_data: []f32) void {
+    const bins = common.FFT_SIZE_BY_2_PLUS_1;
+    const n_f = @as(f32, @floatFromInt(common.FFT_SIZE));
+
+    for (0..common.FFT_SIZE) |n| {
+        var sum: f32 = 0.0;
+        const nf = @as(f32, @floatFromInt(n));
+
+        for (0..bins) |k| {
+            const kf = @as(f32, @floatFromInt(k));
+            const angle = 2.0 * std.math.pi * kf * nf / n_f;
+            const cosv = @cos(angle);
+            const sinv = @sin(angle);
+
+            sum += real[k] * cosv - imag[k] * sinv;
+            if (k > 0 and k < bins - 1) {
+                sum += real[k] * cosv + imag[k] * sinv;
+            }
+        }
+
+        time_data[n] = sum / n_f;
+    }
+}
 
 /// Errors that can occur during FFT operations
 pub const FftError = error{
@@ -33,43 +83,38 @@ pub const NrFft = struct {
         return .{ .mode = .float32 };
     }
 
+    /// Post-IFFT amplitude scale expected by callers.
+    /// - fixed_mcu_q15: inverseReal path requires 0.5 compensation in caller.
+    /// - float32 (DFT oracle): no extra compensation needed.
+    pub fn synthesisScale(self: *const Self) f32 {
+        return if (self.mode == .fixed_mcu_q15) 0.5 else 1.0;
+    }
+
     pub fn fft(self: *const Self, time_data: *const [common.FFT_SIZE]f32, real: *[common.FFT_SIZE]f32, imag: *[common.FFT_SIZE]f32) void {
-        const spec_fixed = blk: {
-            if (self.mode == .fixed_mcu_q15) {
-                var fixed_in: [common.FFT_SIZE]Q15 = undefined;
-                for (0..common.FFT_SIZE) |i| fixed_in[i] = Q15.fromFloatRuntime(time_data[i]);
-                break :blk FFT_FIXED.forwardReal(&fixed_in);
-            }
-            break :blk undefined;
-        };
-
-        imag[0] = 0.0;
-        real[0] = if (self.mode == .fixed_mcu_q15) spec_fixed.re[0].toFloat() else FFT_ORACLE.forwardReal(time_data).re[0];
-
-        imag[common.FFT_SIZE_BY_2_PLUS_1 - 1] = 0.0;
         if (self.mode == .fixed_mcu_q15) {
+            var fixed_in: [common.FFT_SIZE]Q15 = undefined;
+            for (0..common.FFT_SIZE) |i| fixed_in[i] = Q15.fromFloatRuntime(time_data[i]);
+            const spec_fixed = FFT_FIXED.forwardReal(&fixed_in);
+
+            imag[0] = 0.0;
+            real[0] = spec_fixed.re[0].toFloat();
+            imag[common.FFT_SIZE_BY_2_PLUS_1 - 1] = 0.0;
             real[common.FFT_SIZE_BY_2_PLUS_1 - 1] = spec_fixed.re[common.FFT_SIZE / 2].toFloat();
             for (1..(common.FFT_SIZE_BY_2_PLUS_1 - 1)) |i| {
                 real[i] = spec_fixed.re[i].toFloat();
                 imag[i] = spec_fixed.im[i].toFloat();
             }
         } else {
-            const spec = FFT_ORACLE.forwardReal(time_data);
-            real[common.FFT_SIZE_BY_2_PLUS_1 - 1] = spec.re[common.FFT_SIZE / 2];
-            for (1..(common.FFT_SIZE_BY_2_PLUS_1 - 1)) |i| {
-                real[i] = spec.re[i];
-                imag[i] = spec.im[i];
-            }
+            dftForwardReal(time_data, real, imag);
         }
     }
 
     /// Inverse FFT with explicit error handling for insufficient buffer sizes.
     ///
     /// # Scaling Convention Note
-    /// The output is multiplied by 2.0 to compensate for the normalization in forward FFT.
-    /// The caller (e.g., NoiseSuppressor.process) typically applies a matching 0.5 scale
-    /// to get the correct amplitude. This two-step scaling keeps the FFT core normalized
-    /// while allowing the suppressor to control final output gain.
+    /// - fixed_mcu_q15 路径：输出乘以 2.0，调用方需乘 0.5 复原幅度；
+    /// - float32 DFT 路径：输出已是标准 IDFT 结果，无需额外补偿。
+    /// 调用方应使用 `synthesisScale()` 获取一致的后缩放因子。
     ///
     /// # Errors
     /// Returns FftError.InsufficientRealBuffer if real.len < FFT_SIZE_BY_2_PLUS_1
@@ -100,24 +145,7 @@ pub const NrFft = struct {
                 time_data[i] = reconstructed[i].toFloat() * 2.0;
             }
         } else {
-            var spec: FFT_ORACLE.Spectrum = .{
-                .re = [_]f32{0.0} ** (common.FFT_SIZE / 2 + 1),
-                .im = [_]f32{0.0} ** (common.FFT_SIZE / 2 + 1),
-            };
-            spec.re[0] = real[0];
-            spec.im[0] = 0.0;
-            spec.re[common.FFT_SIZE / 2] = real[common.FFT_SIZE_BY_2_PLUS_1 - 1];
-            spec.im[common.FFT_SIZE / 2] = 0.0;
-            for (1..(common.FFT_SIZE_BY_2_PLUS_1 - 1)) |i| {
-                spec.re[i] = real[i];
-                spec.im[i] = imag[i];
-            }
-
-            const reconstructed = FFT_ORACLE.inverseReal(&spec);
-            // Scale by 2.0 to compensate FFT normalization (see Scaling Convention Note above)
-            for (0..common.FFT_SIZE) |i| {
-                time_data[i] = reconstructed[i] * 2.0;
-            }
+            dftInverseReal(real, imag, time_data);
         }
     }
 };

@@ -247,7 +247,7 @@ impl WienerFilter {
 }
 
 // ============================================================================
-// FFT (matches ns_fft.zig behavior)
+// FFT (DFT reference, matching AEC3RS golden generator style)
 // ============================================================================
 
 fn fft(input: &[f32; FFT_SIZE]) -> ([f32; FFT_SIZE_BY_2_PLUS_1], [f32; FFT_SIZE_BY_2_PLUS_1]) {
@@ -259,6 +259,10 @@ fn fft(input: &[f32; FFT_SIZE]) -> ([f32; FFT_SIZE_BY_2_PLUS_1], [f32; FFT_SIZE_
             let angle = 2.0 * PI * (k as f32) * (i as f32) / (FFT_SIZE as f32);
             re[k] += input[i] * angle.cos();
             im[k] -= input[i] * angle.sin();
+        }
+
+        if k == 0 || k == FFT_SIZE_BY_2_PLUS_1 - 1 {
+            im[k] = 0.0;
         }
     }
 
@@ -274,10 +278,10 @@ fn ifft(re: &[f32; FFT_SIZE_BY_2_PLUS_1], im: &[f32; FFT_SIZE_BY_2_PLUS_1]) -> [
             let angle = 2.0 * PI * (k as f32) * (i as f32) / (FFT_SIZE as f32);
             sum += re[k] * angle.cos() - im[k] * angle.sin();
             if k > 0 && k < FFT_SIZE_BY_2_PLUS_1 - 1 {
-                // Conjugate symmetric contribution
                 sum += re[k] * angle.cos() + im[k] * angle.sin();
             }
         }
+
         out[i] = sum / (FFT_SIZE as f32);
     }
 
@@ -357,9 +361,9 @@ impl NoiseSuppressor {
 
         let out = ifft(&real_scaled, &imag_scaled);
 
-        // Apply 0.5 scale to match the 2.0 scale in ifft (matches Zig)
+        // float32 DFT path: no post-IFFT compensation scale required
         for i in 0..FRAME_SIZE {
-            frame[i] = (out[i] * 0.5).clamp(-1.0, 1.0);
+            frame[i] = out[i].clamp(-1.0, 1.0);
         }
     }
 }
