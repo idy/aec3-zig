@@ -75,7 +75,7 @@ test "golden_rust_ns_forward_inverse_vectors" {
     try std.testing.expect(max_im_err < 1e-3);
 
     var out = [_]f32{0.0} ** NS_FFT_SIZE;
-    fft.ifft(re[0..], im[0..], out[0..]);
+    try fft.ifft(re[0..], im[0..], out[0..]);
     const out_golden = common.parseNamedF32(golden_text, "NS_IFFT256", NS_FFT_SIZE);
 
     var max_ifft_err: f32 = 0.0;
