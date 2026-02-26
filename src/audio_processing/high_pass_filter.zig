@@ -66,6 +66,8 @@ pub const HighPassFilter = struct {
         const new_filters = try self.allocator.alloc(CascadedBiQuadFilter, num_channels);
         errdefer self.allocator.free(new_filters);
 
+        const copy_count = @min(num_channels, self.filters.len);
+
         // Track only NEWLY CONSTRUCTED filters (not shallow-copied ones)
         // Shallow copies from self.filters don't need deinit on rollback
         var new_constructed_count: usize = 0;
@@ -73,12 +75,11 @@ pub const HighPassFilter = struct {
             // Only deinit filters we actually constructed (not shallow copies)
             var j: usize = 0;
             while (j < new_constructed_count) : (j += 1) {
-                new_filters[self.filters.len + j].deinit();
+                new_filters[copy_count + j].deinit();
             }
         }
 
         // First, shallow copy and reset existing filters (no deinit needed on rollback)
-        const copy_count = @min(num_channels, self.filters.len);
         for (0..copy_count) |i| {
             new_filters[i] = self.filters[i];
             new_filters[i].reset();
