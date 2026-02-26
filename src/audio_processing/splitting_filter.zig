@@ -3,6 +3,7 @@ const std = @import("std");
 const audio_util = @import("audio_util.zig");
 const ChannelBuffer = @import("channel_buffer.zig").ChannelBuffer;
 const ThreeBandFilterBank = @import("three_band_filter_bank.zig").ThreeBandFilterBank;
+const test_utils = @import("test_utils.zig");
 
 const SAMPLES_PER_BAND: usize = 160;
 const TWO_BAND_FILTER_SAMPLES_PER_FRAME: usize = 320;
@@ -306,12 +307,6 @@ inline fn sat_w32_to_w16(value: i32) i16 {
     return @intCast(value);
 }
 
-fn mean_abs_error(a: []const f32, b: []const f32) f32 {
-    var sum: f32 = 0.0;
-    for (a, b) |x, y| sum += @abs(x - y);
-    return sum / @as(f32, @floatFromInt(a.len));
-}
-
 test "splitting_filter two-band analysis/synthesis round trip" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -334,7 +329,7 @@ test "splitting_filter two-band analysis/synthesis round trip" {
     defer recon.deinit();
     sf.synthesis(&bands, &recon);
 
-    const err = mean_abs_error(input.channel(0), recon.channel(0));
+    const err = test_utils.mean_abs_error(input.channel(0), recon.channel(0));
     // Threshold: 300.0 (measured: ~271, safety margin: ~10.7%)
     // Tightened 4x from original 1200.0, accounts for fixed-point quantization in QMF
     try std.testing.expect(err < 300.0);
@@ -362,7 +357,7 @@ test "splitting_filter three-band analysis/synthesis round trip" {
     defer recon.deinit();
     sf.synthesis(&bands, &recon);
 
-    const err = mean_abs_error(input.channel(0), recon.channel(0));
+    const err = test_utils.mean_abs_error(input.channel(0), recon.channel(0));
     // Threshold: 400.0 (measured: ~377, safety margin: ~6.1%)
     // Tightened 3x from original 1200.0, accounts for fixed-point quantization in QMF
     try std.testing.expect(err < 400.0);

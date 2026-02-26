@@ -2,6 +2,7 @@
 const std = @import("std");
 const ChannelBuffer = @import("channel_buffer.zig").ChannelBuffer;
 const SplittingFilter = @import("splitting_filter.zig").SplittingFilter;
+const test_utils = @import("test_utils.zig");
 
 const SAMPLES_PER_32KHZ_CHANNEL: usize = 320;
 const SAMPLES_PER_48KHZ_CHANNEL: usize = 480;
@@ -161,12 +162,6 @@ fn num_bands_from_frames(num_frames: usize) usize {
         1;
 }
 
-fn mean_abs_error(a: []const f32, b: []const f32) f32 {
-    var sum: f32 = 0.0;
-    for (a, b) |x, y| sum += @abs(x - y);
-    return sum / @as(f32, @floatFromInt(a.len));
-}
-
 test "audio_buffer multi-channel read write" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -199,7 +194,7 @@ test "audio_buffer split/merge round trip for 48k" {
     buffer.split_into_frequency_bands();
     buffer.merge_frequency_bands();
 
-    const err = mean_abs_error(original[0..], buffer.channel(0));
+    const err = test_utils.mean_abs_error(original[0..], buffer.channel(0));
     // Threshold: 800.0 (measured: ~760, safety margin: ~5.3%)
     // Tightened 1.5x from original 1200.0, error propagates from underlying ThreeBandFilterBank
     try std.testing.expect(err < 800.0);
