@@ -161,18 +161,6 @@ fn up_modulate(input: *const [NUM_BANDS][]const f32, split_length: usize, modula
     }
 }
 
-fn compute_snr(input: []const f32, output: []const f32) f32 {
-    var signal_power: f32 = 0.0;
-    var noise_power: f32 = 0.0;
-    for (input, output) |s, o| {
-        const diff = s - o;
-        signal_power += s * s;
-        noise_power += diff * diff;
-    }
-    if (noise_power == 0.0) return 100.0; // Perfect reconstruction
-    return 10.0 * @log10(signal_power / noise_power);
-}
-
 test "three_band_filter_bank analysis/synthesis round trip" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
