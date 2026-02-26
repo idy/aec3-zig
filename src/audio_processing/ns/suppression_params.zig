@@ -1,36 +1,32 @@
 const ns_config = @import("ns_config.zig");
 
+/// Suppression parameter mapping from NS suppression level (matches aec3-rs)
 pub const SuppressionParams = struct {
-    floor_gain: f32,
-    max_gain: f32,
-    prior_snr_smoothing: f32,
-    noise_update_rate: f32,
+    over_subtraction_factor: f32,
+    minimum_attenuating_gain: f32,
+    use_attenuation_adjustment: bool,
 
     pub fn fromConfig(config: ns_config.NsConfig) SuppressionParams {
         return switch (config.level) {
             .low => .{
-                .floor_gain = 0.20,
-                .max_gain = config.max_gain,
-                .prior_snr_smoothing = config.prior_snr_smoothing,
-                .noise_update_rate = 0.97,
+                .over_subtraction_factor = 1.0,
+                .minimum_attenuating_gain = 0.5,
+                .use_attenuation_adjustment = false,
             },
             .moderate => .{
-                .floor_gain = 0.12,
-                .max_gain = config.max_gain,
-                .prior_snr_smoothing = config.prior_snr_smoothing,
-                .noise_update_rate = 0.98,
+                .over_subtraction_factor = 1.0,
+                .minimum_attenuating_gain = 0.25,
+                .use_attenuation_adjustment = true,
             },
             .high => .{
-                .floor_gain = 0.08,
-                .max_gain = config.max_gain,
-                .prior_snr_smoothing = config.prior_snr_smoothing,
-                .noise_update_rate = 0.985,
+                .over_subtraction_factor = 1.1,
+                .minimum_attenuating_gain = 0.125,
+                .use_attenuation_adjustment = true,
             },
             .very_high => .{
-                .floor_gain = 0.04,
-                .max_gain = config.max_gain,
-                .prior_snr_smoothing = config.prior_snr_smoothing,
-                .noise_update_rate = 0.99,
+                .over_subtraction_factor = 1.25,
+                .minimum_attenuating_gain = 0.09,
+                .use_attenuation_adjustment = true,
             },
         };
     }

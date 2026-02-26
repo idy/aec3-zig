@@ -44,19 +44,29 @@ fn dftInverseReal(real: []const f32, imag: []const f32, time_data: []f32) void {
         var sum: f32 = 0.0;
         const nf = @as(f32, @floatFromInt(n));
 
-        for (0..bins) |k| {
+        // DC component (k=0)
+        sum += real[0];
+
+        // Middle frequencies (k=1 to bins-2)
+        for (1..(bins - 1)) |k| {
             const kf = @as(f32, @floatFromInt(k));
             const angle = 2.0 * std.math.pi * kf * nf / n_f;
             const cosv = @cos(angle);
             const sinv = @sin(angle);
 
-            sum += real[k] * cosv - imag[k] * sinv;
-            if (k > 0 and k < bins - 1) {
-                sum += real[k] * cosv + imag[k] * sinv;
-            }
+            // X[k] * e^(j*angle) + X[N-k] * e^(-j*angle)
+            // For real input, X[N-k] = conj(X[k])
+            // So: 2 * (real[k]*cos - imag[k]*sin)
+            sum += 2.0 * (real[k] * cosv - imag[k] * sinv);
         }
 
-        time_data[n] = sum / n_f;
+        // Nyquist component (k=bins-1)
+        if (bins > 1) {
+            sum += real[bins - 1] * @cos(std.math.pi * nf); // (-1)^n
+        }
+
+        // Match aec3-rs ns_fft scaling convention: 2 / N.
+        time_data[n] = (2.0 * sum) / n_f;
     }
 }
 

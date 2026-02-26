@@ -20,3 +20,4 @@ name = "ns-golden-generator"
 path = "src/gen_ns_golden.rs"
 
 [dependencies]
+aec3 = { path = "/Users/idy/Vibing/aec3-zig/main/openteam/docs/aec3-rs-src" }

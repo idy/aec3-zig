@@ -3,6 +3,67 @@ const profileFor = @import("../../numeric_profile.zig").profileFor;
 
 const FixedSample = profileFor(.fixed_mcu_q15).Sample;
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// aec3-rs compatible fast math approximations
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Fast log2 approximation using bit manipulation (matches aec3-rs fast_log2f)
+pub fn fastLog2f(input: f32) f32 {
+    std.debug.assert(input > 0.0);
+    const bits: u32 = @as(u32, @bitCast(input));
+    const bits_f: f32 = @floatFromInt(bits);
+    return bits_f * 1.192_092_9e-7 - 126.942_695;
+}
+
+/// Sqrt approximation (uses std.sqrt for now)
+pub fn sqrtFastApproximation(value: f32) f32 {
+    return std.math.sqrt(value);
+}
+
+/// 2^power approximation
+pub fn pow2Approximation(power: f32) f32 {
+    return std.math.pow(f32, 2.0, power);
+}
+
+/// x^power approximation
+pub fn powApproximation(x: f32, power: f32) f32 {
+    return pow2Approximation(power * fastLog2f(x));
+}
+
+/// Natural log approximation using fast log2
+pub fn logApproximation(x: f32) f32 {
+    return fastLog2f(x) * std.math.ln2;
+}
+
+/// Log approximation for slice (in-place)
+pub fn logApproximationSlice(src: []const f32, dst: []f32) void {
+    std.debug.assert(src.len == dst.len);
+    for (src, dst) |s, *d| {
+        d.* = logApproximation(s);
+    }
+}
+
+/// Exp approximation (10^(x * log10(e)))
+pub fn expApproximation(x: f32) f32 {
+    return powApproximation(10.0, x * std.math.log10e);
+}
+
+/// Exp approximation for slice (in-place)
+pub fn expApproximationSlice(src: []const f32, dst: []f32) void {
+    std.debug.assert(src.len == dst.len);
+    for (src, dst) |s, *d| {
+        d.* = expApproximation(s);
+    }
+}
+
+/// Exp with sign flip for slice
+pub fn expApproximationSignFlipSlice(src: []const f32, dst: []f32) void {
+    std.debug.assert(src.len == dst.len);
+    for (src, dst) |s, *d| {
+        d.* = expApproximation(-s);
+    }
+}
+
 /// 定点数学常数和查找表
 const Q15_LUT_BITS = 8; // LUT 大小为 256，提高精度
 const Q15_LUT_SIZE = 1 << Q15_LUT_BITS;
