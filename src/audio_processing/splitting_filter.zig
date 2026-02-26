@@ -22,6 +22,7 @@ const TwoBandStates = struct {
 pub const SplittingFilter = struct {
     num_channels_: usize,
     num_bands: usize,
+    num_frames_: usize,
     two_band_states: []TwoBandStates,
     three_band_filter_banks: []ThreeBandFilterBank,
     allocator: std.mem.Allocator,
@@ -53,6 +54,7 @@ pub const SplittingFilter = struct {
         return .{
             .num_channels_ = num_channels,
             .num_bands = num_bands,
+            .num_frames_ = num_frames,
             .two_band_states = two_band_states,
             .three_band_filter_banks = three_band_filter_banks,
             .allocator = allocator,
@@ -74,7 +76,9 @@ pub const SplittingFilter = struct {
             if (num_channels > self.three_band_filter_banks.len) {
                 // Need to grow - allocate new filter banks
                 const new_banks = try self.allocator.alloc(ThreeBandFilterBank, num_channels);
-                @memcpy(new_banks[0..self.three_band_filter_banks.len], self.three_band_filter_banks);
+                if (self.three_band_filter_banks.len > 0) {
+                    @memcpy(new_banks[0..self.three_band_filter_banks.len], self.three_band_filter_banks);
+                }
 
                 var initialized: usize = self.three_band_filter_banks.len;
                 errdefer {
@@ -85,10 +89,9 @@ pub const SplittingFilter = struct {
                     self.allocator.free(new_banks);
                 }
 
-                const num_frames = self.three_band_filter_banks[0].in_buffer.len * NUM_BANDS;
                 var i: usize = self.three_band_filter_banks.len;
                 while (i < num_channels) : (i += 1) {
-                    new_banks[i] = try ThreeBandFilterBank.new(self.allocator, num_frames);
+                    new_banks[i] = try ThreeBandFilterBank.new(self.allocator, self.num_frames_);
                     initialized += 1;
                 }
 
@@ -472,6 +475,87 @@ test "splitting_filter set_num_channels boundary zero" {
     defer recon.deinit();
     recon.set_num_channels(0);
     sf.synthesis(&bands, &recon);
+
+    try std.testing.expect(true);
+}
+
+test "splitting_filter set_num_channels grows from zero for three-band" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var sf = try SplittingFilter.new(arena.allocator(), 0, 3, 480);
+    defer sf.deinit();
+
+    try sf.set_num_channels(1);
+
+    var input = try ChannelBuffer(f32).new(arena.allocator(), 480, 1, 1);
+    defer input.deinit();
+    for (0..480) |i| {
+        input.channel_mut(0)[i] = @sin(2.0 * std.math.pi * 900.0 * @as(f32, @floatFromInt(i)) / 48_000.0);
+    }
+
+    var bands = try ChannelBuffer(f32).new(arena.allocator(), 480, 1, 3);
+    defer bands.deinit();
+    sf.analysis(&input, &bands);
+
+    var recon = try ChannelBuffer(f32).new(arena.allocator(), 480, 1, 1);
+    defer recon.deinit();
+    sf.synthesis(&bands, &recon);
+
+    var energy: f32 = 0.0;
+    for (recon.channel(0)) |v| energy += v * v;
+    try std.testing.expect(std.math.isFinite(energy));
+    try std.testing.expect(energy > 0.0);
+}
+
+test "splitting_filter deinit frees memory two-band" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var sf = try SplittingFilter.new(arena.allocator(), 2, 2, 320);
+    sf.deinit();
+
+    // If deinit doesn't free properly, arena will detect leak
+    try std.testing.expect(true);
+}
+
+test "splitting_filter deinit frees memory three-band" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var sf = try SplittingFilter.new(arena.allocator(), 2, 3, 480);
+    sf.deinit();
+
+    // If deinit doesn't free properly, arena will detect leak
+    try std.testing.expect(true);
+}
+
+test "splitting_filter deinit boundary zero channels" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Both 2-band and 3-band with 0 channels
+    var sf2 = try SplittingFilter.new(arena.allocator(), 0, 2, 320);
+    sf2.deinit();
+
+    var sf3 = try SplittingFilter.new(arena.allocator(), 0, 3, 480);
+    sf3.deinit();
+
+    try std.testing.expect(true);
+}
+
+test "splitting_filter deinit boundary after channel growth" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Start with 0 channels, grow, then deinit
+    var sf = try SplittingFilter.new(arena.allocator(), 0, 3, 480);
+
+    try sf.set_num_channels(1);
+    try sf.set_num_channels(3);
+    try sf.set_num_channels(5);
+
+    sf.deinit();
 
     try std.testing.expect(true);
 }

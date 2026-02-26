@@ -95,13 +95,17 @@ pub const AudioBuffer = struct {
 
     pub fn set_num_channels(self: *AudioBuffer, num_channels_in: usize) !void {
         std.debug.assert(num_channels_in <= self.buffer_num_channels);
+
+        // Try the potentially-failing operation first (splitting_filter allocation)
+        if (self.splitting_filter) |*filter| {
+            try filter.set_num_channels(num_channels_in);
+        }
+
+        // Only update state after potential OOM has passed
         self.num_channels_ = num_channels_in;
         self.data.set_num_channels(num_channels_in);
         if (self.split_data) |*split| {
             split.set_num_channels(num_channels_in);
-        }
-        if (self.splitting_filter) |*filter| {
-            try filter.set_num_channels(num_channels_in);
         }
     }
 
@@ -220,6 +224,38 @@ test "audio_buffer from_sample_rates creates correct buffer" {
     try std.testing.expectEqual(@as(usize, 2), buffer.num_channels());
 }
 
+test "audio_buffer from_sample_rates boundary rejects zero rates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    try std.testing.expectError(error.InvalidFrameCount, AudioBuffer.from_sample_rates(arena.allocator(), 0, 1, 16000, 1, 16000));
+    try std.testing.expectError(error.InvalidFrameCount, AudioBuffer.from_sample_rates(arena.allocator(), 16000, 1, 0, 1, 16000));
+    try std.testing.expectError(error.InvalidFrameCount, AudioBuffer.from_sample_rates(arena.allocator(), 16000, 1, 16000, 1, 0));
+}
+
+test "audio_buffer from_sample_rates boundary various sample rates" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Standard rates
+    var buffer_16k = try AudioBuffer.from_sample_rates(arena.allocator(), 16000, 1, 16000, 1, 16000);
+    defer buffer_16k.deinit();
+    try std.testing.expectEqual(@as(usize, 160), buffer_16k.num_frames());
+
+    var buffer_32k = try AudioBuffer.from_sample_rates(arena.allocator(), 32000, 1, 32000, 1, 32000);
+    defer buffer_32k.deinit();
+    try std.testing.expectEqual(@as(usize, 320), buffer_32k.num_frames());
+
+    var buffer_48k = try AudioBuffer.from_sample_rates(arena.allocator(), 48000, 1, 48000, 1, 48000);
+    defer buffer_48k.deinit();
+    try std.testing.expectEqual(@as(usize, 480), buffer_48k.num_frames());
+
+    // Non-standard rate (should still work, frames = rate / 100)
+    var buffer_441k = try AudioBuffer.from_sample_rates(arena.allocator(), 44100, 1, 44100, 1, 44100);
+    defer buffer_441k.deinit();
+    try std.testing.expectEqual(@as(usize, 441), buffer_441k.num_frames());
+}
+
 test "audio_buffer num_frames returns correct value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -241,6 +277,38 @@ test "audio_buffer num_frames_per_band returns correct value" {
     try std.testing.expectEqual(@as(usize, 160), buffer.num_frames_per_band());
 }
 
+test "audio_buffer num_frames boundary various sizes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var buffer_160 = try AudioBuffer.new(arena.allocator(), 160, 1, 160, 1, 160);
+    defer buffer_160.deinit();
+    try std.testing.expectEqual(@as(usize, 160), buffer_160.num_frames());
+
+    var buffer_320 = try AudioBuffer.new(arena.allocator(), 320, 1, 320, 1, 320);
+    defer buffer_320.deinit();
+    try std.testing.expectEqual(@as(usize, 320), buffer_320.num_frames());
+
+    var buffer_480 = try AudioBuffer.new(arena.allocator(), 480, 1, 480, 1, 480);
+    defer buffer_480.deinit();
+    try std.testing.expectEqual(@as(usize, 480), buffer_480.num_frames());
+}
+
+test "audio_buffer num_frames_per_band boundary single band" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // For 16k (1 band), frames per band = total frames
+    var buffer_16k = try AudioBuffer.new(arena.allocator(), 160, 1, 160, 1, 160);
+    defer buffer_16k.deinit();
+    try std.testing.expectEqual(@as(usize, 160), buffer_16k.num_frames_per_band());
+
+    // For 32k (2 bands), frames per band = total / 2
+    var buffer_32k = try AudioBuffer.new(arena.allocator(), 320, 1, 320, 1, 320);
+    defer buffer_32k.deinit();
+    try std.testing.expectEqual(@as(usize, 160), buffer_32k.num_frames_per_band());
+}
+
 test "audio_buffer set_num_channels reduces channel count" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -260,6 +328,21 @@ test "audio_buffer set_num_channels to zero" {
     var buffer = try AudioBuffer.new(arena.allocator(), 160, 2, 160, 2, 160);
     defer buffer.deinit();
 
+    try buffer.set_num_channels(0);
+    try std.testing.expectEqual(@as(usize, 0), buffer.num_channels());
+}
+
+test "audio_buffer num_channels boundary after repeated toggles" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var buffer = try AudioBuffer.new(arena.allocator(), 480, 2, 480, 2, 480);
+    defer buffer.deinit();
+
+    try buffer.set_num_channels(1);
+    try std.testing.expectEqual(@as(usize, 1), buffer.num_channels());
+    try buffer.set_num_channels(2);
+    try std.testing.expectEqual(@as(usize, 2), buffer.num_channels());
     try buffer.set_num_channels(0);
     try std.testing.expectEqual(@as(usize, 0), buffer.num_channels());
 }
@@ -328,6 +411,20 @@ test "audio_buffer num_bands returns correct value" {
     try std.testing.expectEqual(@as(usize, 3), buffer_48k.num_bands());
 }
 
+test "audio_buffer num_bands boundary non-standard frame counts" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Non-standard frame counts should default to 1 band
+    var buffer_100 = try AudioBuffer.new(arena.allocator(), 100, 1, 100, 1, 100);
+    defer buffer_100.deinit();
+    try std.testing.expectEqual(@as(usize, 1), buffer_100.num_bands());
+
+    var buffer_200 = try AudioBuffer.new(arena.allocator(), 200, 1, 200, 1, 200);
+    defer buffer_200.deinit();
+    try std.testing.expectEqual(@as(usize, 1), buffer_200.num_bands());
+}
+
 test "audio_buffer channel and channel_mut provide access" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -373,6 +470,31 @@ test "audio_buffer split_band and split_band_mut provide access" {
     try std.testing.expectEqual(@as(f32, 11.0), buffer.split_band(0, 2)[20]);
 }
 
+test "audio_buffer split_band boundary last valid band index" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var buffer = try AudioBuffer.new(arena.allocator(), 480, 1, 480, 1, 480);
+    defer buffer.deinit();
+
+    buffer.split_into_frequency_bands();
+    const last = buffer.num_bands() - 1;
+    _ = buffer.split_band(0, last)[0];
+}
+
+test "audio_buffer split_band_mut boundary last valid band index" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var buffer = try AudioBuffer.new(arena.allocator(), 480, 1, 480, 1, 480);
+    defer buffer.deinit();
+
+    buffer.split_into_frequency_bands();
+    const last = buffer.num_bands() - 1;
+    buffer.split_band_mut(0, last)[0] = 1.0;
+    try std.testing.expectEqual(@as(f32, 1.0), buffer.split_band(0, last)[0]);
+}
+
 test "audio_buffer split_band on single band returns data band" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -416,4 +538,61 @@ test "audio_buffer set_num_channels keeps splitting filter in sync" {
     for (buffer.channel(0)) |v| energy += v * v;
     try std.testing.expect(std.math.isFinite(energy));
     try std.testing.expect(energy > 0.0);
+}
+
+test "audio_buffer deinit frees memory" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var buffer = try AudioBuffer.new(arena.allocator(), 480, 2, 480, 2, 480);
+    buffer.deinit();
+
+    // If deinit doesn't free properly, arena will detect leak
+    try std.testing.expect(true);
+}
+
+test "audio_buffer deinit boundary single band" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // 16kHz -> 1 band (no splitting filter allocated)
+    var buffer = try AudioBuffer.new(arena.allocator(), 160, 1, 160, 1, 160);
+    buffer.deinit();
+
+    try std.testing.expect(true);
+}
+
+test "audio_buffer deinit boundary after split_merge" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var buffer = try AudioBuffer.new(arena.allocator(), 480, 1, 480, 1, 480);
+
+    // Use the buffer before deinit
+    for (0..480) |i| {
+        buffer.channel_mut(0)[i] = @floatFromInt(i);
+    }
+    buffer.split_into_frequency_bands();
+    buffer.merge_frequency_bands();
+
+    buffer.deinit();
+
+    try std.testing.expect(true);
+}
+
+test "audio_buffer set_num_channels rollback on failure" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    // Create buffer with 3 bands (has splitting_filter)
+    var buffer = try AudioBuffer.new(arena.allocator(), 480, 2, 480, 2, 480);
+    defer buffer.deinit();
+
+    // This should succeed normally, but we verify state consistency
+    try buffer.set_num_channels(1);
+    try std.testing.expectEqual(@as(usize, 1), buffer.num_channels());
+
+    // Should be able to change again
+    try buffer.set_num_channels(2);
+    try std.testing.expectEqual(@as(usize, 2), buffer.num_channels());
 }

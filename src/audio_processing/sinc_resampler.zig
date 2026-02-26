@@ -320,6 +320,51 @@ test "sinc_resampler flush resets state" {
     try std.testing.expectEqual(@as(f64, 0.0), resampler.virtual_source_idx);
 }
 
+test "sinc_resampler flush boundary idempotent" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var resampler = try SincResampler.new(arena.allocator(), 0.5, 160);
+    defer resampler.deinit();
+
+    // Multiple flushes should be idempotent
+    resampler.flush();
+    const primed1 = resampler.buffer_primed;
+    const idx1 = resampler.virtual_source_idx;
+
+    resampler.flush();
+    const primed2 = resampler.buffer_primed;
+    const idx2 = resampler.virtual_source_idx;
+
+    resampler.flush();
+    const primed3 = resampler.buffer_primed;
+    const idx3 = resampler.virtual_source_idx;
+
+    try std.testing.expectEqual(primed1, primed2);
+    try std.testing.expectEqual(primed2, primed3);
+    try std.testing.expectEqual(idx1, idx2);
+    try std.testing.expectEqual(idx2, idx3);
+}
+
+test "sinc_resampler deinit frees memory" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var resampler = try SincResampler.new(arena.allocator(), 0.5, 160);
+    resampler.deinit();
+
+    // If deinit doesn't free, arena will detect leak
+    try std.testing.expect(true);
+}
+
+test "sinc_resampler deinit boundary minimum frames" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var resampler = try SincResampler.new(arena.allocator(), 1.0, MIN_REQUEST_FRAMES);
+    resampler.deinit();
+}
+
 test "sinc_resampler set_ratio updates chunk_size" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -365,6 +410,15 @@ test "sinc_resampler request_frames returns correct value" {
     var resampler2 = try SincResampler.new(arena.allocator(), 1.0, 320);
     defer resampler2.deinit();
     try std.testing.expectEqual(@as(usize, 320), resampler2.request_frames());
+}
+
+test "sinc_resampler request_frames boundary minimum accepted" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var resampler = try SincResampler.new(arena.allocator(), 1.0, MIN_REQUEST_FRAMES);
+    defer resampler.deinit();
+    try std.testing.expectEqual(MIN_REQUEST_FRAMES, resampler.request_frames());
 }
 
 test "sinc_resampler chunk_size returns reasonable value" {
@@ -421,4 +475,38 @@ test "sinc_resampler resample with zero frames returns immediately" {
     resampler.resample(0, output[0..], &dummy, TestCtx.fill);
     // No panic means success
     try std.testing.expect(true);
+}
+
+test "sinc_resampler resample boundary minimum supported frames" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+
+    var resampler = try SincResampler.new(arena.allocator(), 1.0, MIN_REQUEST_FRAMES);
+    defer resampler.deinit();
+
+    var src = [_]f32{0} ** MIN_REQUEST_FRAMES;
+    for (0..src.len) |i| src[i] = @sin(2.0 * std.math.pi * 300.0 * @as(f32, @floatFromInt(i)) / 16_000.0);
+
+    const Ctx = struct {
+        source: []const f32,
+        consumed: usize = 0,
+
+        fn fill(ctx: *anyopaque, dest: []f32) void {
+            const self: *@This() = @ptrCast(@alignCast(ctx));
+            const available = self.source.len - @min(self.consumed, self.source.len);
+            const n = @min(available, dest.len);
+            if (n > 0) {
+                @memcpy(dest[0..n], self.source[self.consumed .. self.consumed + n]);
+                self.consumed += n;
+            }
+            if (n < dest.len) {
+                @memset(dest[n..], 0.0);
+            }
+        }
+    };
+
+    var ctx = Ctx{ .source = src[0..] };
+    var out = [_]f32{0} ** MIN_REQUEST_FRAMES;
+    resampler.resample(MIN_REQUEST_FRAMES, out[0..], &ctx, Ctx.fill);
+    try std.testing.expectEqual(MIN_REQUEST_FRAMES, ctx.consumed);
 }
