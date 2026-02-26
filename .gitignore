@@ -1,3 +1,6 @@
 .zig-cache/
 zig-out/
 openteam/
+worklog.md
+t2a_*.mp3
+testdata/rust_support/target/

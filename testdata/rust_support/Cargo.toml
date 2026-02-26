@@ -1,0 +1,18 @@
+[package]
+name = "aec3-testdata"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "golden-generator"
+path = "src/main.rs"
+
+[[bin]]
+name = "bench-foundation"
+path = "src/bench_foundation.rs"
+
+[[bin]]
+name = "gen-fft-golden"
+path = "src/gen_fft_golden.rs"
+
+[dependencies]
