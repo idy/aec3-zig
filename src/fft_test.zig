@@ -9,6 +9,8 @@ const aec3_common = @import("audio_processing/aec3/aec3_common.zig");
 const NrFft = @import("audio_processing/ns/ns_fft.zig").NrFft;
 const ns_common = @import("audio_processing/ns/ns_common.zig");
 
+const rust_golden_text = @embedFile("test_support/rust_fft_golden_vectors.txt");
+
 fn maxAbsDiff(a: []const f32, b: []const f32) f32 {
     var max_err: f32 = 0.0;
     for (a, b) |x, y| {
@@ -22,6 +24,33 @@ fn makeSine(comptime N: usize, bin: usize) [N]f32 {
     for (0..N) |i| {
         const phase = 2.0 * std.math.pi * @as(f32, @floatFromInt(bin * i)) / @as(f32, @floatFromInt(N));
         out[i] = @sin(phase);
+    }
+    return out;
+}
+
+fn parseRustGolden(comptime name: []const u8, comptime N: usize) [N]f32 {
+    var out: [N]f32 = undefined;
+    var seen = [_]bool{false} ** N;
+    const prefix = std.fmt.comptimePrint("{s}[", .{name});
+
+    var it = std.mem.splitScalar(u8, rust_golden_text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        const close = std.mem.indexOfScalarPos(u8, line, prefix.len, ']') orelse @panic("invalid golden index line");
+        const eq = std.mem.indexOfScalarPos(u8, line, close + 1, '=') orelse @panic("invalid golden value line");
+
+        const idx = std.fmt.parseInt(usize, line[prefix.len..close], 10) catch @panic("invalid golden index parse");
+        if (idx >= N) @panic("golden index out of range");
+        const val = std.fmt.parseFloat(f32, line[eq + 1 ..]) catch @panic("invalid golden float parse");
+
+        out[idx] = val;
+        seen[idx] = true;
+    }
+
+    for (seen) |ok| {
+        if (!ok) @panic("golden vector incomplete");
     }
     return out;
 }
@@ -438,6 +467,133 @@ test "test_inverse_oracle_float_dc_nyquist_boundary_128" {
         const sign: f32 = if ((n & 1) == 0) 1.0 else -1.0;
         const expected = 1.0 + 0.5 * sign;
         try std.testing.expectApproxEqAbs(expected, y[n], 1e-5);
+    }
+}
+
+test "test_rust_golden_aec3_zero_padded_forward_vector" {
+    var fft = Aec3Fft.initOracle();
+    var input = [_]f32{0.0} ** aec3_common.FFT_LENGTH_BY_2;
+    for (0..aec3_common.FFT_LENGTH_BY_2) |i| {
+        const x = @as(f32, @floatFromInt(i));
+        input[i] = 0.35 * @sin(x * 0.13) + 0.2 * @cos(x * 0.07) + (@as(f32, @floatFromInt(@as(i32, @intCast(i)) - 32)) / 512.0);
+    }
+
+    const spec = try fft.zero_padded_fft(input[0..], .rectangular);
+    const re_golden = parseRustGolden("AEC3_ZERO_PADDED_RE65", aec3_common.FFT_LENGTH_BY_2_PLUS_1);
+    const im_golden = parseRustGolden("AEC3_ZERO_PADDED_IM65", aec3_common.FFT_LENGTH_BY_2_PLUS_1);
+
+    var max_re_err: f32 = 0.0;
+    var max_im_err: f32 = 0.0;
+    for (0..aec3_common.FFT_LENGTH_BY_2_PLUS_1) |k| {
+        max_re_err = @max(max_re_err, @abs(spec.re[k] - re_golden[k]));
+        max_im_err = @max(max_im_err, @abs(spec.im[k] - im_golden[k]));
+    }
+    try std.testing.expect(max_re_err < 1e-3);
+    try std.testing.expect(max_im_err < 1e-3);
+}
+
+test "test_rust_golden_aec3_zero_padded_ifft_vector" {
+    var fft = Aec3Fft.initOracle();
+
+    var spec = FftData{};
+    const re_golden = parseRustGolden("AEC3_ZERO_PADDED_RE65", aec3_common.FFT_LENGTH_BY_2_PLUS_1);
+    const im_golden = parseRustGolden("AEC3_ZERO_PADDED_IM65", aec3_common.FFT_LENGTH_BY_2_PLUS_1);
+    for (0..aec3_common.FFT_LENGTH_BY_2_PLUS_1) |k| {
+        spec.re[k] = re_golden[k];
+        spec.im[k] = if (k == 0 or k == aec3_common.FFT_LENGTH_BY_2) 0.0 else im_golden[k];
+    }
+
+    const out = fft.ifft(spec);
+    const out_golden = parseRustGolden("AEC3_ZERO_PADDED_IFFT128", aec3_common.FFT_LENGTH);
+    var max_err: f32 = 0.0;
+    for (0..aec3_common.FFT_LENGTH) |i| {
+        max_err = @max(max_err, @abs(out[i] - out_golden[i]));
+    }
+    try std.testing.expect(max_err < 1e-3);
+}
+
+test "test_rust_golden_ns_forward_inverse_vectors" {
+    var fft = NrFft.initOracle();
+    var input = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    for (0..ns_common.FFT_SIZE) |i| {
+        const x = @as(f32, @floatFromInt(i));
+        input[i] = 0.4 * @sin(x * 0.11) - 0.15 * @cos(x * 0.05) + (@as(f32, @floatFromInt(@as(i32, @intCast(i)) - 128)) / 1024.0);
+    }
+
+    var re = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    var im = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    fft.fft(&input, &re, &im);
+
+    const re_golden = parseRustGolden("NS_RE129", ns_common.FFT_SIZE_BY_2_PLUS_1);
+    const im_golden = parseRustGolden("NS_IM129", ns_common.FFT_SIZE_BY_2_PLUS_1);
+    var max_re_err: f32 = 0.0;
+    var max_im_err: f32 = 0.0;
+    for (0..ns_common.FFT_SIZE_BY_2_PLUS_1) |k| {
+        max_re_err = @max(max_re_err, @abs(re[k] - re_golden[k]));
+        max_im_err = @max(max_im_err, @abs(im[k] - im_golden[k]));
+    }
+    try std.testing.expect(max_re_err < 1e-3);
+    try std.testing.expect(max_im_err < 1e-3);
+
+    var out = [_]f32{0.0} ** ns_common.FFT_SIZE;
+    fft.ifft(re[0..], im[0..], out[0..]);
+    const out_golden = parseRustGolden("NS_IFFT256", ns_common.FFT_SIZE);
+    var max_ifft_err: f32 = 0.0;
+    for (0..ns_common.FFT_SIZE) |i| {
+        max_ifft_err = @max(max_ifft_err, @abs(out[i] - out_golden[i]));
+    }
+    try std.testing.expect(max_ifft_err < 1e-3);
+}
+
+test "test_fft_core_forward_boundary_zero_and_impulse_matrix" {
+    const C32 = Complex(f32);
+
+    const FFT128 = FftCore(f32, 128);
+    var zero128 = [_]C32{C32.zero()} ** 128;
+    FFT128.forward(&zero128);
+    for (zero128) |v| {
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), v.re, 1e-7);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), v.im, 1e-7);
+    }
+
+    var impulse128 = [_]C32{C32.zero()} ** 128;
+    impulse128[0] = C32.init(1.0, 0.0);
+    FFT128.forward(&impulse128);
+    for (impulse128) |v| {
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), v.re, 1e-5);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), v.im, 1e-5);
+    }
+
+    const FFT256 = FftCore(f32, 256);
+    var zero256 = [_]C32{C32.zero()} ** 256;
+    FFT256.forward(&zero256);
+    for (zero256) |v| {
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), v.re, 1e-7);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), v.im, 1e-7);
+    }
+}
+
+test "test_fft_core_inverse_boundary_dc_nyquist_matrix" {
+    const C32 = Complex(f32);
+
+    const FFT128 = FftCore(f32, 128);
+    var spec128 = [_]C32{C32.zero()} ** 128;
+    spec128[0] = C32.init(128.0, 0.0);
+    spec128[64] = C32.init(64.0, 0.0);
+    FFT128.inverse(&spec128);
+    for (0..128) |n| {
+        const sign: f32 = if ((n & 1) == 0) 1.0 else -1.0;
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0) + 0.5 * sign, spec128[n].re, 1e-5);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), spec128[n].im, 1e-5);
+    }
+
+    const FFT256 = FftCore(f32, 256);
+    var spec256 = [_]C32{C32.zero()} ** 256;
+    spec256[0] = C32.init(256.0, 0.0);
+    FFT256.inverse(&spec256);
+    for (spec256) |v| {
+        try std.testing.expectApproxEqAbs(@as(f32, 1.0), v.re, 1e-5);
+        try std.testing.expectApproxEqAbs(@as(f32, 0.0), v.im, 1e-5);
     }
 }
 
