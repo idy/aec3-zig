@@ -3,9 +3,6 @@ const ns_common = @import("ns_common.zig");
 const SuppressionParams = @import("suppression_params.zig").SuppressionParams;
 const fast_math = @import("fast_math.zig");
 
-const SHORT_STARTUP_PHASE_BLOCKS: i32 = 50;
-const LONG_STARTUP_PHASE_BLOCKS: i32 = 200;
-
 pub const WienerFilter = struct {
     suppression_params: SuppressionParams,
     spectrum_prev_process: [ns_common.FFT_SIZE_BY_2_PLUS_1]f32,
@@ -46,7 +43,7 @@ pub const WienerFilter = struct {
             );
         }
 
-        if (num_analyzed_frames < SHORT_STARTUP_PHASE_BLOCKS) {
+        if (num_analyzed_frames < ns_common.SHORT_STARTUP_PHASE_BLOCKS) {
             for (0..ns_common.FFT_SIZE_BY_2_PLUS_1) |i| {
                 self.initial_spectral_estimate[i] += signal_spectrum[i];
                 var filter_initial = self.initial_spectral_estimate[i] - self.suppression_params.over_subtraction_factor * parametric_noise_spectrum[i];
@@ -59,9 +56,9 @@ pub const WienerFilter = struct {
                 );
 
                 const ONE_BY_SHORT_STARTUP_PHASE_BLOCKS: f32 =
-                    1.0 / @as(f32, SHORT_STARTUP_PHASE_BLOCKS);
+                    1.0 / @as(f32, ns_common.SHORT_STARTUP_PHASE_BLOCKS);
 
-                filter_initial *= @as(f32, SHORT_STARTUP_PHASE_BLOCKS) - @as(f32, @floatFromInt(num_analyzed_frames));
+                filter_initial *= @as(f32, ns_common.SHORT_STARTUP_PHASE_BLOCKS) - @as(f32, @floatFromInt(num_analyzed_frames));
                 self.filter[i] *= @as(f32, @floatFromInt(num_analyzed_frames));
                 self.filter[i] += filter_initial;
                 self.filter[i] *= ONE_BY_SHORT_STARTUP_PHASE_BLOCKS;
@@ -78,7 +75,7 @@ pub const WienerFilter = struct {
         energy_before_filtering: f32,
         energy_after_filtering: f32,
     ) f32 {
-        if (!self.suppression_params.use_attenuation_adjustment or num_analyzed_frames <= LONG_STARTUP_PHASE_BLOCKS) {
+        if (!self.suppression_params.use_attenuation_adjustment or num_analyzed_frames <= ns_common.LONG_STARTUP_PHASE_BLOCKS) {
             return 1.0;
         }
 

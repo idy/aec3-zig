@@ -52,11 +52,6 @@ pub const Histogram = struct {
 /// Histograms for NS feature thresholds adaptation (matches aec3-rs)
 pub const HISTOGRAM_SIZE: usize = 1000;
 
-// Bin sizes from ns_common
-const BIN_SIZE_LRT: f32 = 0.1;
-const BIN_SIZE_SPEC_FLAT: f32 = 0.05;
-const BIN_SIZE_SPEC_DIFF: f32 = 0.1;
-
 pub const Histograms = struct {
     lrt: [HISTOGRAM_SIZE]i32,
     spectral_flatness: [HISTOGRAM_SIZE]i32,
@@ -78,7 +73,7 @@ pub const Histograms = struct {
 
     pub fn update(self: *Histograms, features: *const SignalModel) void {
         if (features.lrt >= 0.0) {
-            const lrt_idx_f = features.lrt / BIN_SIZE_LRT;
+            const lrt_idx_f = features.lrt / ns_common.BIN_SIZE_LRT;
             if (lrt_idx_f < @as(f32, @floatFromInt(HISTOGRAM_SIZE))) {
                 const lrt_idx = @as(usize, @intFromFloat(lrt_idx_f));
                 if (lrt_idx < HISTOGRAM_SIZE) {
@@ -88,7 +83,7 @@ pub const Histograms = struct {
         }
 
         if (features.spectral_flatness >= 0.0) {
-            const flat_idx_f = features.spectral_flatness / BIN_SIZE_SPEC_FLAT;
+            const flat_idx_f = features.spectral_flatness / ns_common.BIN_SIZE_SPEC_FLAT;
             if (flat_idx_f < @as(f32, @floatFromInt(HISTOGRAM_SIZE))) {
                 const flat_idx = @as(usize, @intFromFloat(flat_idx_f));
                 if (flat_idx < HISTOGRAM_SIZE) {
@@ -98,7 +93,7 @@ pub const Histograms = struct {
         }
 
         if (features.spectral_diff >= 0.0) {
-            const diff_idx_f = features.spectral_diff / BIN_SIZE_SPEC_DIFF;
+            const diff_idx_f = features.spectral_diff / ns_common.BIN_SIZE_SPEC_DIFF;
             if (diff_idx_f < @as(f32, @floatFromInt(HISTOGRAM_SIZE))) {
                 const diff_idx = @as(usize, @intFromFloat(diff_idx_f));
                 if (diff_idx < HISTOGRAM_SIZE) {
