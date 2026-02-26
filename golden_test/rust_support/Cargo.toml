@@ -16,6 +16,10 @@ name = "gen-fft-golden"
 path = "src/gen_fft_golden.rs"
 
 [[bin]]
+name = "gen-audio-infra-golden"
+path = "src/gen_audio_infra_golden.rs"
+
+[[bin]]
 name = "ns-golden-generator"
 path = "src/gen_ns_golden.rs"
 

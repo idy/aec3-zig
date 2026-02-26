@@ -1,1 +1,0 @@
-../../testdata/rust_fft_golden_vectors.txt

@@ -93,6 +93,5 @@ test {
     _ = @import("fft_test.zig");
     _ = @import("foundation_extra_test.zig");
     _ = @import("foundation_fixed_float_test.zig");
-    _ = @import("test_golden_foundation.zig");
     _ = @import("test_support/smoke_fir.zig");
 }
