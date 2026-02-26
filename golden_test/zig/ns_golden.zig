@@ -13,18 +13,14 @@
 //! 4. Sub-module unit tests
 
 const std = @import("std");
-const NoiseSuppressor = @import("audio_processing/ns/noise_suppressor.zig").NoiseSuppressor;
-const ns_common = @import("audio_processing/ns/ns_common.zig");
+const aec3 = @import("aec3");
+const NoiseSuppressor = aec3.NoiseSuppressor;
+const ns_common = aec3.NsCommon;
+
+const golden_text = @embedFile("../vectors/rust_ns_golden_vectors.txt");
 
 /// Parse a named f32 vector from golden text
 fn parseGoldenF32(comptime name: []const u8, comptime N: usize) ![N]f32 {
-    const golden_text = try std.fs.cwd().readFileAlloc(
-        std.testing.allocator,
-        "testdata/rust_ns_golden_vectors.txt",
-        8 * 1024 * 1024,
-    );
-    defer std.testing.allocator.free(golden_text);
-
     var out: [N]f32 = undefined;
     var seen = [_]bool{false} ** N;
     const prefix = std.fmt.comptimePrint("{s}[", .{name});
@@ -446,7 +442,7 @@ test "ns handles multiple consecutive frames" {
 
 test "speech probability estimator produces valid probabilities" {
     // Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
-    const SpeechProbabilityEstimator = @import("audio_processing/ns/speech_probability_estimator.zig").SpeechProbabilityEstimator;
+    const SpeechProbabilityEstimator = aec3.SpeechProbabilityEstimator;
 
     var spe = SpeechProbabilityEstimator.init();
 
@@ -519,8 +515,8 @@ test "speech probability estimator produces valid probabilities" {
 }
 
 test "wiener filter gain is always valid" {
-    const WienerFilter = @import("audio_processing/ns/wiener_filter.zig").WienerFilter;
-    const SuppressionParams = @import("audio_processing/ns/suppression_params.zig").SuppressionParams;
+    const WienerFilter = aec3.WienerFilter;
+    const SuppressionParams = aec3.SuppressionParams;
 
     const params = SuppressionParams.fromConfig(.{});
     var wf = WienerFilter.init(params);

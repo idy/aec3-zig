@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(lib);
 
-    // 创建单元测试
+    // 创建单元测试（全部使用模块内联测试）
     const unit_tests = b.addTest(.{
         .name = "aec3_test",
         .root_module = aec3_mod,
@@ -52,7 +52,7 @@ pub fn build(b: *std.Build) void {
 
     // 创建 benchmark
     const bench_mod = b.createModule(.{
-        .root_source_file = b.path("src/test_support/benchmark.zig"),
+        .root_source_file = b.path("src/benchmark.zig"),
         .target = target,
         .optimize = .ReleaseFast, // benchmark 总是用 ReleaseFast
     });
