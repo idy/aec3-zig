@@ -1,140 +1,103 @@
-//! Benchmark 测试
+//! FFT benchmark
 
 const std = @import("std");
 const aec3 = @import("aec3");
 
-const SampleOps = aec3.SampleOps;
-const FixedPoint = aec3.FixedPoint;
-const Complex = aec3.Complex;
-
-fn benchmarkFixedPointMul() !void {
-    const Q15 = FixedPoint(15);
-    const ops = SampleOps(Q15);
-
-    const iterations: usize = 100_000;
-    var a = Q15.fromFloat(0.5);
-    var b = Q15.fromFloat(0.3);
-
-    var timer = try std.time.Timer.start();
-    const start = timer.lap();
-
-    var result = Q15.zero();
-    for (0..iterations) |_| {
-        result = ops.mul(a, b);
-        // 防止优化掉
-        a = result;
-        b = ops.fromFloat(0.3);
+fn fillSignalF32(comptime N: usize) [N]f32 {
+    var x: [N]f32 = undefined;
+    for (0..N) |i| {
+        x[i] = 0.5 * @sin(@as(f32, @floatFromInt(i)) * 0.17) + 0.25 * @cos(@as(f32, @floatFromInt(i)) * 0.31);
     }
-
-    const end = timer.read();
-    const elapsed_ns = end - start;
-    const elapsed_us = elapsed_ns / 1000;
-    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iterations));
-
-    std.debug.print("\n=== FixedPoint(Q15) Multiplication Benchmark ===\n", .{});
-    std.debug.print("Iterations: {d}\n", .{iterations});
-    std.debug.print("Total time: {d} us\n", .{elapsed_us});
-    std.debug.print("Time per op: {d:.2} ns\n", .{ns_per_op});
-    std.debug.print("Final result: {d:.6}\n", .{result.toFloat()});
+    return x;
 }
 
-fn benchmarkF32Mul() !void {
-    const ops = SampleOps(f32);
-
-    const iterations: usize = 100_000;
-    var a: f32 = 0.5;
-    var b: f32 = 0.3;
+fn bench_fft_128_f32() !void {
+    const FFT = aec3.FftCore(f32, 128);
+    var signal = fillSignalF32(128);
+    const iters: usize = 50_000;
 
     var timer = try std.time.Timer.start();
-    const start = timer.lap();
-
-    var result: f32 = 0.0;
-    for (0..iterations) |_| {
-        result = ops.mul(a, b);
-        a = result;
-        b = 0.3;
+    _ = timer.lap();
+    var acc: f32 = 0.0;
+    for (0..iters) |_| {
+        const s = FFT.forwardReal(&signal);
+        acc += s.re[1];
+        signal[0] += 1e-9;
     }
+    const elapsed_ns = timer.read();
+    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iters));
+    const throughput = (@as(f64, @floatFromInt(iters * 128)) * 1e9) / @as(f64, @floatFromInt(elapsed_ns));
 
-    const end = timer.read();
-    const elapsed_ns = end - start;
-    const elapsed_us = elapsed_ns / 1000;
-    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iterations));
-
-    std.debug.print("\n=== f32 Multiplication Benchmark ===\n", .{});
-    std.debug.print("Iterations: {d}\n", .{iterations});
-    std.debug.print("Total time: {d} us\n", .{elapsed_us});
-    std.debug.print("Time per op: {d:.2} ns\n", .{ns_per_op});
-    std.debug.print("Final result: {d:.6}\n", .{result});
+    std.debug.print("bench_fft_128_f32: ns/op={d:.2}, throughput={d:.2} samples/s, guard={d:.3}\n", .{ ns_per_op, throughput, acc });
 }
 
-fn benchmarkComplexMulFixed() !void {
-    const Q15 = FixedPoint(15);
-    const C = Complex(Q15);
-
-    const iterations: usize = 100_000;
-    var a = C.init(Q15.fromFloat(0.5), Q15.fromFloat(0.3));
-    const b = C.init(Q15.fromFloat(0.2), Q15.fromFloat(0.4));
+fn bench_fft_256_f32() !void {
+    const FFT = aec3.FftCore(f32, 256);
+    var signal = fillSignalF32(256);
+    const iters: usize = 30_000;
 
     var timer = try std.time.Timer.start();
-    const start = timer.lap();
-
-    var result = C.zero();
-    for (0..iterations) |_| {
-        result = C.mul(a, b);
-        a = result;
+    _ = timer.lap();
+    var acc: f32 = 0.0;
+    for (0..iters) |_| {
+        const s = FFT.forwardReal(&signal);
+        acc += s.re[1];
+        signal[0] += 1e-9;
     }
+    const elapsed_ns = timer.read();
+    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iters));
+    const throughput = (@as(f64, @floatFromInt(iters * 256)) * 1e9) / @as(f64, @floatFromInt(elapsed_ns));
 
-    const end = timer.read();
-    const elapsed_ns = end - start;
-    const elapsed_us = elapsed_ns / 1000;
-    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iterations));
-
-    std.debug.print("\n=== Complex(FixedPoint) Multiplication Benchmark ===\n", .{});
-    std.debug.print("Iterations: {d}\n", .{iterations});
-    std.debug.print("Total time: {d} us\n", .{elapsed_us});
-    std.debug.print("Time per op: {d:.2} ns\n", .{ns_per_op});
-    std.debug.print("Final result: ({d:.6}, {d:.6})\n", .{ result.re.toFloat(), result.im.toFloat() });
+    std.debug.print("bench_fft_256_f32: ns/op={d:.2}, throughput={d:.2} samples/s, guard={d:.3}\n", .{ ns_per_op, throughput, acc });
 }
 
-fn benchmarkComplexMulF32() !void {
-    const C = Complex(f32);
-
-    const iterations: usize = 100_000;
-    var a = C.init(0.5, 0.3);
-    const b = C.init(0.2, 0.4);
+fn bench_fft_128_fixed_q15() !void {
+    const Q15 = aec3.FixedPoint(15);
+    const FFT = aec3.FftCore(Q15, 128);
+    const src = fillSignalF32(128);
+    var signal: [128]Q15 = undefined;
+    for (0..128) |i| signal[i] = Q15.fromFloatRuntime(src[i]);
+    const iters: usize = 50_000;
 
     var timer = try std.time.Timer.start();
-    const start = timer.lap();
-
-    var result = C.zero();
-    for (0..iterations) |_| {
-        result = C.mul(a, b);
-        a = result;
+    _ = timer.lap();
+    var acc: f32 = 0.0;
+    for (0..iters) |_| {
+        const s = FFT.forwardReal(&signal);
+        acc += s.re[1].toFloat();
     }
+    const elapsed_ns = timer.read();
+    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iters));
+    const throughput = (@as(f64, @floatFromInt(iters * 128)) * 1e9) / @as(f64, @floatFromInt(elapsed_ns));
 
-    const end = timer.read();
-    const elapsed_ns = end - start;
-    const elapsed_us = elapsed_ns / 1000;
-    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iterations));
+    std.debug.print("bench_fft_128_fixed_q15: ns/op={d:.2}, throughput={d:.2} samples/s, guard={d:.3}\n", .{ ns_per_op, throughput, acc });
+}
 
-    std.debug.print("\n=== Complex(f32) Multiplication Benchmark ===\n", .{});
-    std.debug.print("Iterations: {d}\n", .{iterations});
-    std.debug.print("Total time: {d} us\n", .{elapsed_us});
-    std.debug.print("Time per op: {d:.2} ns\n", .{ns_per_op});
-    std.debug.print("Final result: ({d:.6}, {d:.6})\n", .{ result.re, result.im });
+fn bench_fft_256_fixed_q15() !void {
+    const Q15 = aec3.FixedPoint(15);
+    const FFT = aec3.FftCore(Q15, 256);
+    const src = fillSignalF32(256);
+    var signal: [256]Q15 = undefined;
+    for (0..256) |i| signal[i] = Q15.fromFloatRuntime(src[i]);
+    const iters: usize = 30_000;
+
+    var timer = try std.time.Timer.start();
+    _ = timer.lap();
+    var acc: f32 = 0.0;
+    for (0..iters) |_| {
+        const s = FFT.forwardReal(&signal);
+        acc += s.re[1].toFloat();
+    }
+    const elapsed_ns = timer.read();
+    const ns_per_op = @as(f64, @floatFromInt(elapsed_ns)) / @as(f64, @floatFromInt(iters));
+    const throughput = (@as(f64, @floatFromInt(iters * 256)) * 1e9) / @as(f64, @floatFromInt(elapsed_ns));
+
+    std.debug.print("bench_fft_256_fixed_q15: ns/op={d:.2}, throughput={d:.2} samples/s, guard={d:.3}\n", .{ ns_per_op, throughput, acc });
 }
 
 pub fn main() !void {
-    std.debug.print("\n========================================\n", .{});
-    std.debug.print("AEC3 Numeric Types Benchmark\n", .{});
-    std.debug.print("========================================\n", .{});
-
-    try benchmarkFixedPointMul();
-    try benchmarkF32Mul();
-    try benchmarkComplexMulFixed();
-    try benchmarkComplexMulF32();
-
-    std.debug.print("\n========================================\n", .{});
-    std.debug.print("Benchmark Complete\n", .{});
-    std.debug.print("========================================\n", .{});
+    try bench_fft_128_f32();
+    try bench_fft_128_fixed_q15();
+    try bench_fft_256_f32();
+    try bench_fft_256_fixed_q15();
 }

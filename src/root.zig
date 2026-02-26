@@ -10,6 +10,14 @@ pub const SampleOps = @import("sample_ops.zig").SampleOps;
 pub const FixedPoint = @import("fixed_point.zig").FixedPoint;
 pub const Complex = @import("complex.zig").Complex;
 
+// FFT 子系统
+pub const FftCore = @import("audio_processing/fft_core.zig").FftCore;
+pub const isPowerOfTwo = @import("audio_processing/fft_core.zig").isPowerOfTwo;
+pub const Aec3Fft = @import("audio_processing/aec3/aec3_fft.zig").Aec3Fft;
+pub const Aec3Window = @import("audio_processing/aec3/aec3_fft.zig").Window;
+pub const Aec3FftData = @import("audio_processing/aec3/fft_data.zig").FftData;
+pub const NrFft = @import("audio_processing/ns/ns_fft.zig").NrFft;
+
 // 测试入口（仅测试时编译）
 test {
     _ = @import("numeric_mode.zig");
@@ -18,5 +26,6 @@ test {
     _ = @import("fixed_point.zig");
     _ = @import("complex.zig");
     _ = @import("test.zig");
+    _ = @import("fft_test.zig");
     _ = @import("test_support/smoke_fir.zig");
 }
