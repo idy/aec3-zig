@@ -15,4 +15,8 @@ path = "src/bench_foundation.rs"
 name = "gen-fft-golden"
 path = "src/gen_fft_golden.rs"
 
+[[bin]]
+name = "ns-golden-generator"
+path = "src/gen_ns_golden.rs"
+
 [dependencies]

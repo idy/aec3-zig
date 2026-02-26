@@ -72,6 +72,7 @@ test {
     _ = @import("audio_processing/ns/speech_probability_estimator.zig");
     _ = @import("audio_processing/ns/wiener_filter.zig");
     _ = @import("audio_processing/ns/noise_suppressor.zig");
+    _ = @import("audio_processing/ns/noise_suppressor_golden_test.zig");
     _ = @import("test.zig");
     _ = @import("fft_test.zig");
     _ = @import("foundation_extra_test.zig");

@@ -347,7 +347,7 @@ test "test_nrfft_inverse_basic" {
     var im = [_]f32{0.0} ** ns_common.FFT_SIZE;
     re[0] = 256.0;
     var x = [_]f32{0.0} ** ns_common.FFT_SIZE;
-    fft.ifft(re[0..], im[0..], x[0..]);
+    try fft.ifft(re[0..], im[0..], x[0..]);
     for (x) |v| try std.testing.expectApproxEqAbs(@as(f32, 2.0), v, 1e-3);
 }
 
@@ -407,7 +407,7 @@ test "test_nrfft_inverse_boundary_zero_spectrum" {
     const re = [_]f32{0.0} ** ns_common.FFT_SIZE;
     const im = [_]f32{0.0} ** ns_common.FFT_SIZE;
     var x = [_]f32{1.0} ** ns_common.FFT_SIZE;
-    fft.ifft(re[0..], im[0..], x[0..]);
+    try fft.ifft(re[0..], im[0..], x[0..]);
     for (x) |v| try std.testing.expectApproxEqAbs(@as(f32, 0.0), v, 1e-7);
 }
 
@@ -536,7 +536,7 @@ test "test_rust_golden_ns_forward_inverse_vectors" {
     try std.testing.expect(max_im_err < 1e-3);
 
     var out = [_]f32{0.0} ** ns_common.FFT_SIZE;
-    fft.ifft(re[0..], im[0..], out[0..]);
+    try fft.ifft(re[0..], im[0..], out[0..]);
     const out_golden = parseRustGolden("NS_IFFT256", ns_common.FFT_SIZE);
     var max_ifft_err: f32 = 0.0;
     for (0..ns_common.FFT_SIZE) |i| {
@@ -724,7 +724,7 @@ test "test_rust_nrfft_ifft_scaling_alignment" {
     var im = [_]f32{0.0} ** ns_common.FFT_SIZE;
     re[0] = 256.0;
     var out = [_]f32{0.0} ** ns_common.FFT_SIZE;
-    fft.ifft(re[0..], im[0..], out[0..]);
+    try fft.ifft(re[0..], im[0..], out[0..]);
     for (out) |v| {
         try std.testing.expectApproxEqAbs(@as(f32, 2.0), v, 1e-3);
     }

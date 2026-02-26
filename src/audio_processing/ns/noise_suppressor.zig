@@ -75,8 +75,9 @@ pub const NoiseSuppressor = struct {
         }
 
         var out: [ns_common.FFT_SIZE]f32 = [_]f32{0.0} ** ns_common.FFT_SIZE;
-        self.fft.ifft(real[0..ns_common.FFT_SIZE_BY_2_PLUS_1], imag[0..ns_common.FFT_SIZE_BY_2_PLUS_1], &out);
+        try self.fft.ifft(real[0..ns_common.FFT_SIZE_BY_2_PLUS_1], imag[0..ns_common.FFT_SIZE_BY_2_PLUS_1], &out);
 
+        // Apply 0.5 scale to match the 2.0 scale in ifft, completing the round-trip normalization
         for (0..ns_common.FFT_SIZE) |i| {
             frame[i] = std.math.clamp(out[i] * 0.5, -1.0, 1.0);
         }

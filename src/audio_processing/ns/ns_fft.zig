@@ -10,6 +10,16 @@ const Q15 = FixedProfile.Sample;
 const FFT_FIXED = FftCore(Q15, common.FFT_SIZE);
 const FFT_ORACLE = FftCore(OracleProfile.Sample, common.FFT_SIZE);
 
+/// Errors that can occur during FFT operations
+pub const FftError = error{
+    /// Input real buffer too small (must be >= FFT_SIZE_BY_2_PLUS_1)
+    InsufficientRealBuffer,
+    /// Input imaginary buffer too small (must be >= FFT_SIZE_BY_2_PLUS_1)
+    InsufficientImagBuffer,
+    /// Output time buffer too small (must be >= FFT_SIZE)
+    InsufficientTimeBuffer,
+};
+
 pub const NrFft = struct {
     const Self = @This();
 
@@ -53,10 +63,22 @@ pub const NrFft = struct {
         }
     }
 
-    pub fn ifft(self: *const Self, real: []const f32, imag: []const f32, time_data: []f32) void {
-        std.debug.assert(real.len >= common.FFT_SIZE_BY_2_PLUS_1);
-        std.debug.assert(imag.len >= common.FFT_SIZE_BY_2_PLUS_1);
-        std.debug.assert(time_data.len >= common.FFT_SIZE);
+    /// Inverse FFT with explicit error handling for insufficient buffer sizes.
+    ///
+    /// # Scaling Convention Note
+    /// The output is multiplied by 2.0 to compensate for the normalization in forward FFT.
+    /// The caller (e.g., NoiseSuppressor.process) typically applies a matching 0.5 scale
+    /// to get the correct amplitude. This two-step scaling keeps the FFT core normalized
+    /// while allowing the suppressor to control final output gain.
+    ///
+    /// # Errors
+    /// Returns FftError.InsufficientRealBuffer if real.len < FFT_SIZE_BY_2_PLUS_1
+    /// Returns FftError.InsufficientImagBuffer if imag.len < FFT_SIZE_BY_2_PLUS_1
+    /// Returns FftError.InsufficientTimeBuffer if time_data.len < FFT_SIZE
+    pub fn ifft(self: *const Self, real: []const f32, imag: []const f32, time_data: []f32) FftError!void {
+        if (real.len < common.FFT_SIZE_BY_2_PLUS_1) return FftError.InsufficientRealBuffer;
+        if (imag.len < common.FFT_SIZE_BY_2_PLUS_1) return FftError.InsufficientImagBuffer;
+        if (time_data.len < common.FFT_SIZE) return FftError.InsufficientTimeBuffer;
 
         if (self.mode == .fixed_mcu_q15) {
             var spec: FFT_FIXED.Spectrum = .{
@@ -73,6 +95,7 @@ pub const NrFft = struct {
             }
 
             const reconstructed = FFT_FIXED.inverseReal(&spec);
+            // Scale by 2.0 to compensate FFT normalization (see Scaling Convention Note above)
             for (0..common.FFT_SIZE) |i| {
                 time_data[i] = reconstructed[i].toFloat() * 2.0;
             }
@@ -91,9 +114,63 @@ pub const NrFft = struct {
             }
 
             const reconstructed = FFT_ORACLE.inverseReal(&spec);
+            // Scale by 2.0 to compensate FFT normalization (see Scaling Convention Note above)
             for (0..common.FFT_SIZE) |i| {
                 time_data[i] = reconstructed[i] * 2.0;
             }
         }
     }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Tests
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test "ifft returns error for insufficient real buffer" {
+    const fft = NrFft.initOracle();
+    var real: [common.FFT_SIZE_BY_2_PLUS_1 - 1]f32 = undefined;
+    var imag: [common.FFT_SIZE_BY_2_PLUS_1]f32 = undefined;
+    var time: [common.FFT_SIZE]f32 = undefined;
+
+    const result = fft.ifft(&real, &imag, &time);
+    try std.testing.expectError(FftError.InsufficientRealBuffer, result);
+}
+
+test "ifft returns error for insufficient imag buffer" {
+    const fft = NrFft.initOracle();
+    var real: [common.FFT_SIZE_BY_2_PLUS_1]f32 = undefined;
+    var imag: [common.FFT_SIZE_BY_2_PLUS_1 - 1]f32 = undefined;
+    var time: [common.FFT_SIZE]f32 = undefined;
+
+    const result = fft.ifft(&real, &imag, &time);
+    try std.testing.expectError(FftError.InsufficientImagBuffer, result);
+}
+
+test "ifft returns error for insufficient time buffer" {
+    const fft = NrFft.initOracle();
+    var real: [common.FFT_SIZE_BY_2_PLUS_1]f32 = undefined;
+    var imag: [common.FFT_SIZE_BY_2_PLUS_1]f32 = undefined;
+    var time: [common.FFT_SIZE - 1]f32 = undefined;
+
+    const result = fft.ifft(&real, &imag, &time);
+    try std.testing.expectError(FftError.InsufficientTimeBuffer, result);
+}
+
+test "ifft succeeds with correct buffer sizes" {
+    const fft = NrFft.initOracle();
+    var real: [common.FFT_SIZE_BY_2_PLUS_1]f32 = undefined;
+    var imag: [common.FFT_SIZE_BY_2_PLUS_1]f32 = undefined;
+    var time: [common.FFT_SIZE]f32 = undefined;
+
+    // Initialize with some data
+    for (&real) |*r| r.* = 0.0;
+    for (&imag) |*i| i.* = 0.0;
+    real[0] = 1.0; // DC component
+
+    try fft.ifft(&real, &imag, &time);
+
+    // After IFFT with DC=1, we should get a constant signal scaled by 2.0
+    for (time) |t| {
+        try std.testing.expect(std.math.isFinite(t));
+    }
+}
