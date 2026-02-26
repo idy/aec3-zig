@@ -6,14 +6,18 @@
 //! algorithmic differences between simplified reference and full implementation.
 
 const std = @import("std");
-const NoiseSuppressor = @import("noise_suppressor.zig").NoiseSuppressor;
-const NsConfig = @import("ns_config.zig").NsConfig;
-const ns_common = @import("ns_common.zig");
-
-const golden_text = @embedFile("rust_ns_golden_vectors.txt");
+const NoiseSuppressor = @import("audio_processing/ns/noise_suppressor.zig").NoiseSuppressor;
+const ns_common = @import("audio_processing/ns/ns_common.zig");
 
 /// Parse a named f32 vector from golden text
-fn parseGoldenF32(comptime name: []const u8, comptime N: usize) [N]f32 {
+fn parseGoldenF32(comptime name: []const u8, comptime N: usize) ![N]f32 {
+    const golden_text = try std.fs.cwd().readFileAlloc(
+        std.testing.allocator,
+        "testdata/rust_ns_golden_vectors.txt",
+        8 * 1024 * 1024,
+    );
+    defer std.testing.allocator.free(golden_text);
+
     var out: [N]f32 = undefined;
     var seen = [_]bool{false} ** N;
     const prefix = std.fmt.comptimePrint("{s}[", .{name});
@@ -38,7 +42,7 @@ fn parseGoldenF32(comptime name: []const u8, comptime N: usize) [N]f32 {
     for (seen, 0..) |ok, i| {
         if (!ok) {
             std.debug.print("Missing golden value for {s}[{}]\n", .{ name, i });
-            @panic("golden vector incomplete");
+            return error.GoldenVectorIncomplete;
         }
     }
     return out;
@@ -64,7 +68,7 @@ fn expectSliceApproxEq(expected: []const f32, actual: []const f32, max_rel_err: 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test "golden input vectors are valid - silence" {
-    const input = parseGoldenF32("NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
 
     // Verify all samples are near zero (silence)
     for (input) |s| {
@@ -73,7 +77,7 @@ test "golden input vectors are valid - silence" {
 }
 
 test "golden input vectors are valid - low amplitude" {
-    const input = parseGoldenF32("NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
 
     // Verify amplitude is around 0.001
     var max_amp: f32 = 0.0;
@@ -85,7 +89,7 @@ test "golden input vectors are valid - low amplitude" {
 }
 
 test "golden input vectors are valid - full scale" {
-    const input = parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
 
     // Verify amplitude is around 0.9
     var max_amp: f32 = 0.0;
@@ -97,7 +101,7 @@ test "golden input vectors are valid - full scale" {
 }
 
 test "golden input vectors are valid - speech plus noise" {
-    const input = parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
 
     // Verify signal has expected characteristics (non-zero, within range)
     var max_amp: f32 = 0.0;
@@ -119,7 +123,7 @@ test "golden input vectors are valid - speech plus noise" {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test "ns processes silence input without error" {
-    const input = parseGoldenF32("NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
@@ -152,7 +156,7 @@ test "ns processes silence input without error" {
 }
 
 test "ns processes low amplitude input" {
-    const input = parseGoldenF32("NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
@@ -178,7 +182,7 @@ test "ns processes low amplitude input" {
 }
 
 test "ns processes full scale input without clipping" {
-    const input = parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
@@ -191,7 +195,7 @@ test "ns processes full scale input without clipping" {
     }
 
     // Regenerate input for final pass
-    const input2 = parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
+    const input2 = try parseGoldenF32("NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
     @memcpy(&frame, &input2);
     try ns.analyze(&frame);
     try ns.process(&frame);
@@ -212,7 +216,7 @@ test "ns processes full scale input without clipping" {
 }
 
 test "ns processes speech plus noise input" {
-    const input = parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
+    const input = try parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
 
     var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
     var frame: [ns_common.FRAME_SIZE]f32 = undefined;
@@ -225,7 +229,7 @@ test "ns processes speech plus noise input" {
     }
 
     // Regenerate input for final pass
-    const input2 = parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
+    const input2 = try parseGoldenF32("NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
     @memcpy(&frame, &input2);
     try ns.analyze(&frame);
     try ns.process(&frame);
@@ -329,7 +333,7 @@ test "ns handles multiple consecutive frames" {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test "speech probability estimator produces valid probabilities" {
-    const SpeechProbabilityEstimator = @import("speech_probability_estimator.zig").SpeechProbabilityEstimator;
+    const SpeechProbabilityEstimator = @import("audio_processing/ns/speech_probability_estimator.zig").SpeechProbabilityEstimator;
 
     var spe = SpeechProbabilityEstimator.init(.float32);
     var prior_snr: [ns_common.FFT_SIZE_BY_2_PLUS_1]f32 = undefined;
@@ -363,8 +367,8 @@ test "speech probability estimator produces valid probabilities" {
 }
 
 test "wiener filter gain is always valid" {
-    const WienerFilter = @import("wiener_filter.zig").WienerFilter;
-    const SuppressionParams = @import("suppression_params.zig").SuppressionParams;
+    const WienerFilter = @import("audio_processing/ns/wiener_filter.zig").WienerFilter;
+    const SuppressionParams = @import("audio_processing/ns/suppression_params.zig").SuppressionParams;
 
     const params = SuppressionParams.fromConfig(.{});
     var wf = WienerFilter.init(params);
