@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(lib);
 
-    // 创建单元测试
+    // 创建单元测试（全部使用模块内联测试）
     const unit_tests = b.addTest(.{
         .name = "aec3_test",
         .root_module = aec3_mod,
@@ -34,14 +34,30 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 
+    // 创建 golden 向量测试（独立于 src 单元测试）
+    const golden_mod = b.createModule(.{
+        .root_source_file = b.path("golden_test/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    golden_mod.addImport("aec3", aec3_mod);
+
+    const golden_tests = b.addTest(.{
+        .name = "aec3_golden_test",
+        .root_module = golden_mod,
+    });
+    const run_golden_tests = b.addRunArtifact(golden_tests);
+    const golden_test_step = b.step("golden-test", "Run golden vector tests");
+    golden_test_step.dependOn(&run_golden_tests.step);
+
     // 创建 benchmark
     const bench_mod = b.createModule(.{
-        .root_source_file = b.path("src/test_support/benchmark.zig"),
+        .root_source_file = b.path("src/benchmark.zig"),
         .target = target,
         .optimize = .ReleaseFast, // benchmark 总是用 ReleaseFast
     });
     bench_mod.addImport("aec3", aec3_mod);
-    
+
     const bench_exe = b.addExecutable(.{
         .name = "benchmark",
         .root_module = bench_mod,

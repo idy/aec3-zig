@@ -5,7 +5,7 @@
 //!   <NAME>[<INDEX>]=<VALUE>
 //!   END <NAME>
 //!
-//! Usage: cargo run --release --bin golden-generator > testdata/rust_foundation_golden_vectors.txt
+//! Usage: cargo run --release --bin golden-generator > ../vectors/rust_foundation_golden_vectors.txt
 
 fn fast_approx_log2f(input: f32) -> f32 {
     assert!(input > 0.0);
