@@ -6,12 +6,6 @@ const SplittingFilter = @import("splitting_filter.zig").SplittingFilter;
 const SAMPLES_PER_32KHZ_CHANNEL: usize = 320;
 const SAMPLES_PER_48KHZ_CHANNEL: usize = 480;
 
-pub const Band = enum(usize) {
-    Band0To8kHz = 0,
-    Band8To16kHz = 1,
-    Band16To24kHz = 2,
-};
-
 pub const AudioBuffer = struct {
     input_num_frames: usize,
     input_num_channels: usize,
@@ -24,9 +18,6 @@ pub const AudioBuffer = struct {
     data: ChannelBuffer(f32),
     split_data: ?ChannelBuffer(f32),
     splitting_filter: ?SplittingFilter,
-
-    pub const SPLIT_BAND_SIZE: usize = 160;
-    pub const MAX_SAMPLE_RATE: usize = 384_000;
 
     pub fn new(
         allocator: std.mem.Allocator,
