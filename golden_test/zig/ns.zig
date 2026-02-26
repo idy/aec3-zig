@@ -17,8 +17,54 @@ const aec3 = @import("aec3");
 const test_utils = @import("test_utils.zig");
 const NoiseSuppressor = aec3.NoiseSuppressor;
 const ns_common = aec3.NsCommon;
+const NumericMode = aec3.NumericMode;
 
 const golden_text = @embedFile("../vectors/rust_ns_golden_vectors.txt");
+
+// 阈值来源（可追溯）：
+// - 采样命令：zig build golden-test -- --test-filter "golden.*(ns|fft|fixed|float)"
+// - 采样时间：2026-02-27
+// - 采样范围：本文件中的 NS 场景（silence/lowamp/fullscale/speechnoise）
+// - 实测包络（max of max/mean/p95 across cases）：
+//   float-vs-rust  = 5.2452087e-6 / 1.6678399e-6 / 4.1723250e-6
+//   fixed-vs-rust  = 1.0597706e-4 / 3.7952625e-5 / 8.1300735e-5
+//   fixed-vs-float = 1.0615587e-4 / 3.7701570e-5 / 8.0347060e-5
+// - 取值策略：在实测包络基础上增加约 2.0x~4.0x 安全裕量，避免过宽阈值掩盖问题。
+const NS_RUST_FLOAT_THRESHOLDS = test_utils.ErrorThresholds{
+    .max_abs = 0.00002,
+    .mean_abs = 0.000005,
+    .p95_abs = 0.000012,
+};
+const NS_RUST_FIXED_THRESHOLDS = test_utils.ErrorThresholds{
+    .max_abs = 0.00025,
+    .mean_abs = 0.00008,
+    .p95_abs = 0.00018,
+};
+const NS_FIXED_VS_FLOAT_THRESHOLDS = test_utils.ErrorThresholds{
+    .max_abs = 0.00025,
+    .mean_abs = 0.00008,
+    .p95_abs = 0.00018,
+};
+
+fn runNsCase(
+    mode: NumericMode,
+    input: [ns_common.FRAME_SIZE]f32,
+    warmup_frames: usize,
+) ![ns_common.FRAME_SIZE]f32 {
+    var ns = try NoiseSuppressor.init(.{ .numeric_mode = mode });
+    var frame: [ns_common.FRAME_SIZE]f32 = input;
+
+    for (0..warmup_frames) |_| {
+        frame = input;
+        try ns.analyze(&frame);
+        try ns.process(&frame);
+    }
+
+    frame = input;
+    try ns.analyze(&frame);
+    try ns.process(&frame);
+    return frame;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Golden Output Cross-Validation Tests
@@ -32,94 +78,140 @@ test "golden ns silence output cross-validation" {
     const input = test_utils.parseNamedF32(golden_text, "NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
     const expected_output = test_utils.parseNamedF32(golden_text, "NS_SILENCE_OUTPUT", ns_common.FRAME_SIZE);
 
-    var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
-    var frame: [ns_common.FRAME_SIZE]f32 = input;
-
-    // Warm-up (same as Rust generator)
-    for (0..5) |_| {
-        frame = input;
-        try ns.analyze(&frame);
-        try ns.process(&frame);
-    }
-
-    // Final pass with fresh silence
-    frame = input;
-    try ns.analyze(&frame);
-    try ns.process(&frame);
-
-    // Cross-validation: strict per-sample golden alignment
-    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
+    const frame = try runNsCase(.float32, input, 5);
+    try test_utils.expectErrorStatsWithin(
+        std.testing.allocator,
+        &expected_output,
+        &frame,
+        NS_RUST_FLOAT_THRESHOLDS,
+        "ns silence float-vs-rust",
+    );
 }
 
 test "golden ns low amplitude output cross-validation" {
     const input = test_utils.parseNamedF32(golden_text, "NS_LOWAMP_INPUT", ns_common.FRAME_SIZE);
     const expected_output = test_utils.parseNamedF32(golden_text, "NS_LOWAMP_OUTPUT", ns_common.FRAME_SIZE);
 
-    var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
-    var frame: [ns_common.FRAME_SIZE]f32 = input;
-
-    // Warm-up
-    for (0..5) |_| {
-        frame = input;
-        try ns.analyze(&frame);
-        try ns.process(&frame);
-    }
-
-    // Final pass with fresh input
-    frame = input;
-    try ns.analyze(&frame);
-    try ns.process(&frame);
-
-    // Cross-validation: strict per-sample golden alignment
-    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
+    const frame = try runNsCase(.float32, input, 5);
+    try test_utils.expectErrorStatsWithin(
+        std.testing.allocator,
+        &expected_output,
+        &frame,
+        NS_RUST_FLOAT_THRESHOLDS,
+        "ns lowamp float-vs-rust",
+    );
 }
 
 test "golden ns full scale output cross-validation" {
     const input = test_utils.parseNamedF32(golden_text, "NS_FULLSCALE_INPUT", ns_common.FRAME_SIZE);
     const expected_output = test_utils.parseNamedF32(golden_text, "NS_FULLSCALE_OUTPUT", ns_common.FRAME_SIZE);
 
-    var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
-    var frame: [ns_common.FRAME_SIZE]f32 = input;
-
-    // Warm-up
-    for (0..5) |_| {
-        frame = input;
-        try ns.analyze(&frame);
-        try ns.process(&frame);
-    }
-
-    // Final pass with fresh input
-    frame = input;
-    try ns.analyze(&frame);
-    try ns.process(&frame);
-
-    // Cross-validation: Both implementations should produce matching output
-    // Using tighter tolerance since FFT implementations now match exactly
-    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
+    const frame = try runNsCase(.float32, input, 5);
+    try test_utils.expectErrorStatsWithin(
+        std.testing.allocator,
+        &expected_output,
+        &frame,
+        NS_RUST_FLOAT_THRESHOLDS,
+        "ns fullscale float-vs-rust",
+    );
 }
 
 test "golden ns speech plus noise output cross-validation" {
     const input = test_utils.parseNamedF32(golden_text, "NS_SPEECHNOISE_INPUT", ns_common.FRAME_SIZE);
     const expected_output = test_utils.parseNamedF32(golden_text, "NS_SPEECHNOISE_OUTPUT", ns_common.FRAME_SIZE);
 
-    var ns = try NoiseSuppressor.init(.{ .numeric_mode = .float32 });
+    const frame = try runNsCase(.float32, input, 10);
+    try test_utils.expectErrorStatsWithin(
+        std.testing.allocator,
+        &expected_output,
+        &frame,
+        NS_RUST_FLOAT_THRESHOLDS,
+        "ns speechnoise float-vs-rust",
+    );
+}
+
+test "golden ns fixed output cross-validation against rust vectors" {
+    const cases = [_]struct {
+        name: []const u8,
+        input_name: []const u8,
+        output_name: []const u8,
+        warmup_frames: usize,
+    }{
+        .{ .name = "silence", .input_name = "NS_SILENCE_INPUT", .output_name = "NS_SILENCE_OUTPUT", .warmup_frames = 5 },
+        .{ .name = "lowamp", .input_name = "NS_LOWAMP_INPUT", .output_name = "NS_LOWAMP_OUTPUT", .warmup_frames = 5 },
+        .{ .name = "fullscale", .input_name = "NS_FULLSCALE_INPUT", .output_name = "NS_FULLSCALE_OUTPUT", .warmup_frames = 5 },
+        .{ .name = "speechnoise", .input_name = "NS_SPEECHNOISE_INPUT", .output_name = "NS_SPEECHNOISE_OUTPUT", .warmup_frames = 10 },
+    };
+
+    inline for (cases) |case| {
+        const input = test_utils.parseNamedF32(golden_text, case.input_name, ns_common.FRAME_SIZE);
+        const expected_output = test_utils.parseNamedF32(golden_text, case.output_name, ns_common.FRAME_SIZE);
+        const fixed_output = try runNsCase(.fixed_mcu_q15, input, case.warmup_frames);
+
+        for (fixed_output) |sample| {
+            try std.testing.expect(std.math.isFinite(sample));
+        }
+
+        const context = try std.fmt.allocPrint(std.testing.allocator, "ns {s} fixed-vs-rust", .{case.name});
+        defer std.testing.allocator.free(context);
+        try test_utils.expectErrorStatsWithin(
+            std.testing.allocator,
+            &expected_output,
+            &fixed_output,
+            NS_RUST_FIXED_THRESHOLDS,
+            context,
+        );
+    }
+}
+
+test "golden ns fixed-vs-float tolerance cross-validation" {
+    const cases = [_]struct {
+        name: []const u8,
+        input_name: []const u8,
+        warmup_frames: usize,
+    }{
+        .{ .name = "silence", .input_name = "NS_SILENCE_INPUT", .warmup_frames = 5 },
+        .{ .name = "lowamp", .input_name = "NS_LOWAMP_INPUT", .warmup_frames = 5 },
+        .{ .name = "fullscale", .input_name = "NS_FULLSCALE_INPUT", .warmup_frames = 5 },
+        .{ .name = "speechnoise", .input_name = "NS_SPEECHNOISE_INPUT", .warmup_frames = 10 },
+    };
+
+    inline for (cases) |case| {
+        const input = test_utils.parseNamedF32(golden_text, case.input_name, ns_common.FRAME_SIZE);
+        const fixed_output = try runNsCase(.fixed_mcu_q15, input, case.warmup_frames);
+        const float_output = try runNsCase(.float32, input, case.warmup_frames);
+
+        const context = try std.fmt.allocPrint(std.testing.allocator, "ns {s} fixed-vs-float", .{case.name});
+        defer std.testing.allocator.free(context);
+        try test_utils.expectErrorStatsWithin(
+            std.testing.allocator,
+            &float_output,
+            &fixed_output,
+            NS_FIXED_VS_FLOAT_THRESHOLDS,
+            context,
+        );
+    }
+}
+
+test "golden ns fixed silence stability over consecutive frames" {
+    const input = test_utils.parseNamedF32(golden_text, "NS_SILENCE_INPUT", ns_common.FRAME_SIZE);
+    var ns = try NoiseSuppressor.init(.{ .numeric_mode = .fixed_mcu_q15 });
     var frame: [ns_common.FRAME_SIZE]f32 = input;
 
-    // Warm-up
-    for (0..10) |_| {
+    for (0..100) |_| {
         frame = input;
         try ns.analyze(&frame);
         try ns.process(&frame);
+
+        for (frame) |sample| {
+            try std.testing.expect(std.math.isFinite(sample));
+            try std.testing.expect(sample >= -32768.0);
+            try std.testing.expect(sample <= 32767.0);
+        }
+
+        const stats = try test_utils.computeErrorStats(std.testing.allocator, &input, &frame);
+        try std.testing.expect(stats.max_abs <= NS_RUST_FIXED_THRESHOLDS.max_abs);
     }
-
-    // Final pass with fresh input
-    frame = input;
-    try ns.analyze(&frame);
-    try ns.process(&frame);
-
-    // Cross-validation: Both implementations should produce matching output
-    // Using tighter tolerance since FFT implementations now match exactly
-    try test_utils.expectSliceApproxEq(&expected_output, &frame, 0.01, 0.001);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
