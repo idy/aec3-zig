@@ -79,16 +79,21 @@ pub const HighPassFilter = struct {
             }
         }
 
-        // First, shallow copy and reset existing filters (no deinit needed on rollback)
+        // First, shallow copy existing filters (no deinit needed on rollback)
         for (0..copy_count) |i| {
             new_filters[i] = self.filters[i];
-            new_filters[i].reset();
         }
 
         // Then, construct new filters for any additional channels
         for (copy_count..num_channels) |i| {
             new_filters[i] = try CascadedBiQuadFilter.with_coefficients(self.allocator, coeffs, 1);
             new_constructed_count += 1;
+        }
+
+        // Reset reused filters only after all fallible operations succeed.
+        // This avoids mutating old shared state on rollback paths.
+        for (0..copy_count) |i| {
+            new_filters[i].reset();
         }
 
         // Deinit excess old filters
@@ -215,6 +220,52 @@ test "high_pass_filter reset_channels to zero channels" {
 
     try hp.reset_channels(0);
     try std.testing.expectEqual(@as(usize, 0), hp.filters.len);
+}
+
+test "high_pass_filter reset_channels failed growth keeps prior state" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
+
+    var hp = try HighPassFilter.new(alloc, 16_000, 1);
+    defer hp.deinit();
+
+    var hp_ref = try HighPassFilter.new(std.testing.allocator, 16_000, 1);
+    defer hp_ref.deinit();
+
+    const n = 64;
+    var warmup_a = [_]f32{0} ** n;
+    var warmup_b = [_]f32{0} ** n;
+    for (0..n) |i| {
+        const t = @as(f32, @floatFromInt(i));
+        const sample = @sin(2.0 * std.math.pi * 1200.0 * t / 16_000.0);
+        warmup_a[i] = sample;
+        warmup_b[i] = sample;
+    }
+
+    var warm_ch_a = [_][]f32{warmup_a[0..]};
+    var warm_ch_b = [_][]f32{warmup_b[0..]};
+    hp.process(warm_ch_a[0..]);
+    hp_ref.process(warm_ch_b[0..]);
+
+    // Let temporary filter array allocation succeed and fail on new channel construction.
+    failing.fail_index = failing.alloc_index + 1;
+    try std.testing.expectError(error.OutOfMemory, hp.reset_channels(2));
+    try std.testing.expectEqual(@as(usize, 1), hp.filters.len);
+
+    var probe_a = [_]f32{0} ** n;
+    var probe_b = [_]f32{0} ** n;
+    var probe_ch_a = [_][]f32{probe_a[0..]};
+    var probe_ch_b = [_][]f32{probe_b[0..]};
+    hp.process(probe_ch_a[0..]);
+    hp_ref.process(probe_ch_b[0..]);
+
+    for (probe_a, probe_b) |actual, expected| {
+        try std.testing.expectApproxEqAbs(expected, actual, 1e-6);
+    }
+
+    failing.fail_index = std.math.maxInt(usize);
+    try hp.reset_channels(2);
+    try std.testing.expectEqual(@as(usize, 2), hp.filters.len);
 }
 
 test "high_pass_filter process handles zero channels" {
