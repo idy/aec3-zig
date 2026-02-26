@@ -46,7 +46,7 @@ pub fn get_time_domain_length(filter_length_blocks: usize) usize {
 
 /// Returns the size of the downsampled buffer.
 pub fn get_down_sampled_buffer_size(down_sampling_factor: usize, num_matched_filters: usize) !usize {
-    if (down_sampling_factor == 0) return error.InvalidDownSamplingFactor;
+    if (down_sampling_factor == 0 or down_sampling_factor > BLOCK_SIZE) return error.InvalidDownSamplingFactor;
     const blocks_per_factor = BLOCK_SIZE / down_sampling_factor;
     return blocks_per_factor *
         (MATCHED_FILTER_ALIGNMENT_SHIFT_SIZE_SUB_BLOCKS * num_matched_filters + MATCHED_FILTER_WINDOW_SIZE_SUB_BLOCKS + 1);
@@ -54,7 +54,7 @@ pub fn get_down_sampled_buffer_size(down_sampling_factor: usize, num_matched_fil
 
 /// Returns the size of the render delay buffer.
 pub fn get_render_delay_buffer_size(down_sampling_factor: usize, num_matched_filters: usize, filter_length_blocks: usize) !usize {
-    if (down_sampling_factor == 0) return error.InvalidDownSamplingFactor;
+    if (down_sampling_factor == 0 or down_sampling_factor > BLOCK_SIZE) return error.InvalidDownSamplingFactor;
     const base = try get_down_sampled_buffer_size(down_sampling_factor, num_matched_filters);
     const blocks_per_factor = BLOCK_SIZE / down_sampling_factor;
     return base / blocks_per_factor + filter_length_blocks + 1;
@@ -180,6 +180,9 @@ test "test_render_delay_buffer_size" {
 test "test_invalid_down_sampling_factor_is_rejected" {
     try std.testing.expectError(error.InvalidDownSamplingFactor, get_down_sampled_buffer_size(0, 4));
     try std.testing.expectError(error.InvalidDownSamplingFactor, get_render_delay_buffer_size(0, 4, 12));
+    // down_sampling_factor > BLOCK_SIZE causes division by zero (blocks_per_factor == 0)
+    try std.testing.expectError(error.InvalidDownSamplingFactor, get_down_sampled_buffer_size(BLOCK_SIZE + 1, 4));
+    try std.testing.expectError(error.InvalidDownSamplingFactor, get_render_delay_buffer_size(BLOCK_SIZE + 1, 4, 12));
 }
 
 test "test_fast_approx_log2f" {

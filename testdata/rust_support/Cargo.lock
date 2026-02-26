@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "golden-generator"
+name = "aec3-testdata"
 version = "0.1.0"

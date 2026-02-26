@@ -68,6 +68,8 @@ pub fn float_s16_slice_to_float_in_place(data: []f32) void {
 pub fn copy_audio_if_needed(comptime T: type, src: []const []const T, num_frames: usize, dest: []const []T) void {
     std.debug.assert(src.len == dest.len);
     for (src, dest) |s, d| {
+        std.debug.assert(s.len >= num_frames);
+        std.debug.assert(d.len >= num_frames);
         if (@intFromPtr(s.ptr) != @intFromPtr(d.ptr)) {
             @memcpy(d[0..num_frames], s[0..num_frames]);
         }
@@ -76,8 +78,11 @@ pub fn copy_audio_if_needed(comptime T: type, src: []const []const T, num_frames
 
 /// Deinterleaves audio data from interleaved to planar format.
 pub fn deinterleave(comptime T: type, interleaved: []const T, samples_per_channel: usize, num_channels: usize, deinterleaved: []const []T) void {
+    std.debug.assert(num_channels == 0 or interleaved.len >= samples_per_channel * num_channels);
+    std.debug.assert(deinterleaved.len >= num_channels);
     var ch: usize = 0;
     while (ch < num_channels) : (ch += 1) {
+        std.debug.assert(deinterleaved[ch].len >= samples_per_channel);
         const output = deinterleaved[ch][0..samples_per_channel];
         var idx = ch;
         for (output) |*sample| {
@@ -89,8 +94,11 @@ pub fn deinterleave(comptime T: type, interleaved: []const T, samples_per_channe
 
 /// Interleaves audio data from planar to interleaved format.
 pub fn interleave(comptime T: type, deinterleaved: []const []const T, samples_per_channel: usize, num_channels: usize, interleaved: []T) void {
+    std.debug.assert(deinterleaved.len >= num_channels);
+    std.debug.assert(num_channels == 0 or interleaved.len >= samples_per_channel * num_channels);
     var ch: usize = 0;
     while (ch < num_channels) : (ch += 1) {
+        std.debug.assert(deinterleaved[ch].len >= samples_per_channel);
         const input = deinterleaved[ch][0..samples_per_channel];
         var idx = ch;
         for (input) |sample| {
@@ -102,6 +110,11 @@ pub fn interleave(comptime T: type, deinterleaved: []const []const T, samples_pe
 
 /// Downmixes multi-channel f32 audio to mono.
 pub fn downmix_to_mono_f32(input_channels: []const []const f32, num_frames: usize, out: []f32) void {
+    std.debug.assert(input_channels.len > 0);
+    std.debug.assert(out.len >= num_frames);
+    for (input_channels) |ch| {
+        std.debug.assert(ch.len >= num_frames);
+    }
     var i: usize = 0;
     while (i < num_frames) : (i += 1) {
         var value = input_channels[0][i];
@@ -115,6 +128,11 @@ pub fn downmix_to_mono_f32(input_channels: []const []const f32, num_frames: usiz
 
 /// Downmixes multi-channel i16 audio to mono.
 pub fn downmix_to_mono_i16(input_channels: []const []const i16, num_frames: usize, out: []i16) void {
+    std.debug.assert(input_channels.len > 0);
+    std.debug.assert(out.len >= num_frames);
+    for (input_channels) |ch| {
+        std.debug.assert(ch.len >= num_frames);
+    }
     var i: usize = 0;
     while (i < num_frames) : (i += 1) {
         var sum: i32 = input_channels[0][i];
@@ -130,6 +148,8 @@ pub fn downmix_to_mono_i16(input_channels: []const []const i16, num_frames: usiz
 /// Downmixes interleaved multi-channel i16 audio to mono.
 pub fn downmix_interleaved_to_mono_i16(interleaved: []const i16, num_frames: usize, num_channels: usize, out: []i16) void {
     std.debug.assert(num_channels > 0);
+    std.debug.assert(out.len >= num_frames);
+    std.debug.assert(interleaved.len >= num_frames * num_channels);
     var frame: usize = 0;
     while (frame < num_frames) : (frame += 1) {
         var sum: i32 = 0;
@@ -235,4 +255,71 @@ test "test_downmix_interleaved_single_channel_passthrough" {
     var out = [_]i16{ 0, 0, 0 };
     downmix_interleaved_to_mono_i16(src[0..], 3, 1, out[0..]);
     try std.testing.expectEqualSlices(i16, src[0..], out[0..]);
+}
+
+test "test_copy_audio_if_needed_length_consistency" {
+    // Test with properly sized buffers (should pass)
+    var src0 = [_]f32{ 1.0, 2.0, 3.0 };
+    var src1 = [_]f32{ 4.0, 5.0, 6.0 };
+    var dest0 = [_]f32{ 0.0, 0.0, 0.0 };
+    var dest1 = [_]f32{ 0.0, 0.0, 0.0 };
+    const src = [_][]const f32{ src0[0..], src1[0..] };
+    const dest = [_][]f32{ dest0[0..], dest1[0..] };
+    copy_audio_if_needed(f32, &src, 3, &dest);
+    try std.testing.expectEqual(@as(f32, 1.0), dest0[0]);
+    try std.testing.expectEqual(@as(f32, 6.0), dest1[2]);
+}
+
+test "test_deinterleave_length_consistency" {
+    // Properly sized buffers
+    var inter = [_]f32{ 1.0, 2.0, 3.0, 4.0 }; // 2 samples * 2 channels
+    var ch0 = [_]f32{ 0.0, 0.0 };
+    var ch1 = [_]f32{ 0.0, 0.0 };
+    const deint = [_][]f32{ ch0[0..], ch1[0..] };
+    deinterleave(f32, &inter, 2, 2, &deint);
+    try std.testing.expectEqual(@as(f32, 1.0), ch0[0]);
+    try std.testing.expectEqual(@as(f32, 3.0), ch0[1]);
+}
+
+test "test_interleave_length_consistency" {
+    // Properly sized buffers
+    var ch0 = [_]f32{ 1.0, 3.0 };
+    var ch1 = [_]f32{ 2.0, 4.0 };
+    var inter = [_]f32{ 0.0, 0.0, 0.0, 0.0 };
+    const planar = [_][]const f32{ ch0[0..], ch1[0..] };
+    interleave(f32, &planar, 2, 2, &inter);
+    try std.testing.expectEqual(@as(f32, 1.0), inter[0]);
+    try std.testing.expectEqual(@as(f32, 4.0), inter[3]);
+}
+
+test "test_downmix_to_mono_f32_length_consistency" {
+    // Properly sized input channels and output
+    const c0 = [_]f32{ 1.0, 2.0, 3.0 };
+    const c1 = [_]f32{ 3.0, 4.0, 5.0 };
+    const channels = [_][]const f32{ c0[0..], c1[0..] };
+    var out = [_]f32{ 0.0, 0.0, 0.0 };
+    downmix_to_mono_f32(&channels, 3, &out);
+    try std.testing.expectEqual(@as(f32, 2.0), out[0]); // (1+3)/2
+    try std.testing.expectEqual(@as(f32, 3.0), out[1]); // (2+4)/2
+}
+
+test "test_downmix_to_mono_i16_length_consistency" {
+    // Properly sized input channels and output
+    const c0 = [_]i16{ 10, 20, 30 };
+    const c1 = [_]i16{ 30, 40, 50 };
+    const channels = [_][]const i16{ c0[0..], c1[0..] };
+    var out = [_]i16{ 0, 0, 0 };
+    downmix_to_mono_i16(&channels, 3, &out);
+    try std.testing.expectEqual(@as(i16, 20), out[0]); // (10+30)/2
+    try std.testing.expectEqual(@as(i16, 30), out[1]); // (20+40)/2
+}
+
+test "test_downmix_interleaved_length_consistency" {
+    // Properly sized interleaved buffer and output
+    const inter = [_]i16{ 10, 20, 30, 40, 50, 60 }; // 3 frames * 2 channels
+    var out = [_]i16{ 0, 0, 0 };
+    downmix_interleaved_to_mono_i16(&inter, 3, 2, &out);
+    try std.testing.expectEqual(@as(i16, 15), out[0]); // (10+20)/2
+    try std.testing.expectEqual(@as(i16, 35), out[1]); // (30+40)/2
+    try std.testing.expectEqual(@as(i16, 55), out[2]); // (50+60)/2
 }

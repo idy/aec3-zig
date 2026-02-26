@@ -1,13 +1,117 @@
 const std = @import("std");
 
 const aec3_common = @import("audio_processing/aec3/aec3_common.zig");
-const fft_data = @import("audio_processing/aec3/fft_data.zig");
+const fft_data_mod = @import("audio_processing/aec3/fft_data.zig");
 const config = @import("api/config.zig");
 
-fn openGolden(name: []const u8) !std.fs.File {
-    var buf: [256]u8 = undefined;
-    const path = try std.fmt.bufPrint(&buf, "tests/golden/{s}", .{name});
-    return std.fs.cwd().openFile(path, .{});
+const golden_text = @embedFile("test_support/rust_foundation_golden_vectors.txt");
+
+fn parseGoldenF32(comptime name: []const u8, comptime N: usize) [N]f32 {
+    var out: [N]f32 = undefined;
+    var seen = [_]bool{false} ** N;
+    const prefix = std.fmt.comptimePrint("{s}[", .{name});
+
+    var it = std.mem.splitScalar(u8, golden_text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        const close = std.mem.indexOfScalarPos(u8, line, prefix.len, ']') orelse @panic("invalid index line");
+        const eq = std.mem.indexOfScalarPos(u8, line, close + 1, '=') orelse @panic("invalid value line");
+
+        const idx = std.fmt.parseInt(usize, line[prefix.len..close], 10) catch @panic("invalid index parse");
+        if (idx >= N) @panic("index out of range");
+        const val = std.fmt.parseFloat(f32, line[eq + 1 ..]) catch @panic("invalid float parse");
+
+        out[idx] = val;
+        seen[idx] = true;
+    }
+
+    for (seen) |ok| {
+        if (!ok) @panic("golden vector incomplete");
+    }
+    return out;
+}
+
+fn parseGoldenF64(comptime name: []const u8, comptime N: usize) [N]f64 {
+    var out: [N]f64 = undefined;
+    var seen = [_]bool{false} ** N;
+    const prefix = std.fmt.comptimePrint("{s}[", .{name});
+
+    var it = std.mem.splitScalar(u8, golden_text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        const close = std.mem.indexOfScalarPos(u8, line, prefix.len, ']') orelse @panic("invalid index line");
+        const eq = std.mem.indexOfScalarPos(u8, line, close + 1, '=') orelse @panic("invalid value line");
+
+        const idx = std.fmt.parseInt(usize, line[prefix.len..close], 10) catch @panic("invalid index parse");
+        if (idx >= N) @panic("index out of range");
+        const val = std.fmt.parseFloat(f64, line[eq + 1 ..]) catch @panic("invalid float parse");
+
+        out[idx] = val;
+        seen[idx] = true;
+    }
+
+    for (seen) |ok| {
+        if (!ok) @panic("golden vector incomplete");
+    }
+    return out;
+}
+
+fn parseGoldenUsize(comptime name: []const u8, comptime N: usize) [N]usize {
+    var out: [N]usize = undefined;
+    var seen = [_]bool{false} ** N;
+    const prefix = std.fmt.comptimePrint("{s}[", .{name});
+
+    var it = std.mem.splitScalar(u8, golden_text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        const close = std.mem.indexOfScalarPos(u8, line, prefix.len, ']') orelse @panic("invalid index line");
+        const eq = std.mem.indexOfScalarPos(u8, line, close + 1, '=') orelse @panic("invalid value line");
+
+        const idx = std.fmt.parseInt(usize, line[prefix.len..close], 10) catch @panic("invalid index parse");
+        if (idx >= N) @panic("index out of range");
+        const val = std.fmt.parseInt(usize, line[eq + 1 ..], 10) catch @panic("invalid int parse");
+
+        out[idx] = val;
+        seen[idx] = true;
+    }
+
+    for (seen) |ok| {
+        if (!ok) @panic("golden vector incomplete");
+    }
+    return out;
+}
+
+fn parseGoldenI32(comptime name: []const u8, comptime N: usize) [N]i32 {
+    var out: [N]i32 = undefined;
+    var seen = [_]bool{false} ** N;
+    const prefix = std.fmt.comptimePrint("{s}[", .{name});
+
+    var it = std.mem.splitScalar(u8, golden_text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        const close = std.mem.indexOfScalarPos(u8, line, prefix.len, ']') orelse @panic("invalid index line");
+        const eq = std.mem.indexOfScalarPos(u8, line, close + 1, '=') orelse @panic("invalid value line");
+
+        const idx = std.fmt.parseInt(usize, line[prefix.len..close], 10) catch @panic("invalid index parse");
+        if (idx >= N) @panic("index out of range");
+        const val = std.fmt.parseInt(i32, line[eq + 1 ..], 10) catch @panic("invalid int parse");
+
+        out[idx] = val;
+        seen[idx] = true;
+    }
+
+    for (seen) |ok| {
+        if (!ok) @panic("golden vector incomplete");
+    }
+    return out;
 }
 
 fn orderedUlpBits(x: f32) i32 {
@@ -30,81 +134,40 @@ fn expectUlpEq(a: f32, b: f32, max_ulp: u32) !void {
     try std.testing.expect(diff <= max_ulp);
 }
 
-test "golden_aec3_common" {
-    var file = openGolden("golden_aec3_common.bin") catch |err| {
-        if (err == error.FileNotFound) return error.SkipZigTest;
-        return err;
-    };
-    defer file.close();
-    var read_buf: [4096]u8 = undefined;
-    var file_reader = file.reader(&read_buf);
-    const reader = &file_reader.interface;
-
-    const num_rates = try reader.takeInt(u32, .little);
-    var i: u32 = 0;
-    while (i < num_rates) : (i += 1) {
-        const rate = try reader.takeInt(i32, .little);
-        const expected = try reader.takeInt(u64, .little);
+test "golden_num_bands_for_rate" {
+    const rates = parseGoldenI32("NUM_BANDS_RATES", 4);
+    const expected = parseGoldenUsize("NUM_BANDS_EXPECTED", 4);
+    for (rates, expected) |rate, exp| {
         const actual = aec3_common.num_bands_for_rate(rate);
-        try std.testing.expectEqual(expected, actual);
+        try std.testing.expectEqual(exp, actual);
     }
+}
 
-    const count = try reader.takeInt(u32, .little);
-    i = 0;
-    while (i < count) : (i += 1) {
-        const x = @as(f32, @bitCast(try reader.takeInt(u32, .little)));
-        const expected = @as(f32, @bitCast(try reader.takeInt(u32, .little)));
+test "golden_fast_approx_log2f" {
+    const inputs = parseGoldenF32("FAST_LOG2_INPUT", 1000);
+    const expected = parseGoldenF32("FAST_LOG2_EXPECTED", 1000);
+    for (inputs, expected) |x, exp| {
         const actual = aec3_common.fast_approx_log2f(x);
-        try expectUlpEq(expected, actual, 1);
+        try expectUlpEq(exp, actual, 1);
     }
 }
 
-test "golden_fft_data_spectrum" {
-    var file = openGolden("golden_fft_data_spectrum.bin") catch |err| {
-        if (err == error.FileNotFound) return error.SkipZigTest;
-        return err;
-    };
-    defer file.close();
-    var read_buf: [4096]u8 = undefined;
-    var file_reader = file.reader(&read_buf);
-    const reader = &file_reader.interface;
+test "golden_fft_data_spectrum_0" {
+    const packed_array = parseGoldenF32("SPECTRUM_PACKED_0", aec3_common.FFT_LENGTH);
+    const expected = parseGoldenF32("SPECTRUM_EXPECTED_0", aec3_common.FFT_LENGTH_BY_2_PLUS_1);
 
-    const cases = try reader.takeInt(u32, .little);
-    var c: u32 = 0;
-    while (c < cases) : (c += 1) {
-        var packed_array: [aec3_common.FFT_LENGTH]f32 = undefined;
-        for (&packed_array) |*v| v.* = @as(f32, @bitCast(try reader.takeInt(u32, .little)));
+    var d = fft_data_mod.FftData.new();
+    d.copy_from_packed_array(&packed_array);
+    var out: [aec3_common.FFT_LENGTH_BY_2_PLUS_1]f32 = undefined;
+    d.spectrum(.none, &out);
 
-        var expected: [aec3_common.FFT_LENGTH_BY_2_PLUS_1]f32 = undefined;
-        for (&expected) |*v| v.* = @as(f32, @bitCast(try reader.takeInt(u32, .little)));
-
-        var d = fft_data.FftData.new();
-        d.copy_from_packed_array(&packed_array);
-        var out: [aec3_common.FFT_LENGTH_BY_2_PLUS_1]f32 = undefined;
-        d.spectrum(.none, &out);
-
-        for (expected, out) |e, a| {
-            try expectUlpEq(e, a, 1);
-        }
+    for (expected, out) |e, a| {
+        try expectUlpEq(e, a, 1);
     }
 }
 
-test "golden_config_default" {
-    var file = openGolden("golden_config_default.bin") catch |err| {
-        if (err == error.FileNotFound) return error.SkipZigTest;
-        return err;
-    };
-    defer file.close();
-    var read_buf: [4096]u8 = undefined;
-    var file_reader = file.reader(&read_buf);
-    const reader = &file_reader.interface;
-
-    const n = try reader.takeInt(u32, .little);
-    try std.testing.expectEqual(@as(u32, 20), n);
-
-    var expected: [20]f64 = undefined;
-    for (&expected) |*v| v.* = @as(f64, @bitCast(try reader.takeInt(u64, .little)));
-
+test "golden_config_defaults" {
+    const expected = parseGoldenF64("CONFIG_DEFAULTS", 20);
     const cfg = config.EchoCanceller3Config.default();
     const actual = [_]f64{
         @floatFromInt(cfg.buffering.excess_render_detection_interval_blocks),

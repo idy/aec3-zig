@@ -43,8 +43,8 @@ pub const ChannelLayout = enum(i32) {
             .none, .unsupported, .discrete, .bitstream => 0,
             .mono => 1,
             .stereo, .stereo_downmix => 2,
-            .layout_2_1, .layout_2_point_1, .stereo_and_keyboard_mic => 3,
-            .surround, .layout_4_0, .layout_2_2, .layout_3_1, .quad => 4,
+            .layout_2_1, .layout_2_point_1, .stereo_and_keyboard_mic, .surround => 3,
+            .layout_4_0, .layout_2_2, .layout_3_1, .quad => 4,
             .layout_5_0, .layout_5_0_back, .layout_4_1, .layout_4_1_quad_side => 5,
             .layout_5_1, .layout_5_1_back, .layout_6_0, .layout_6_0_front, .hexagonal => 6,
             .layout_6_1, .layout_6_1_back, .layout_6_1_front, .layout_7_0, .layout_7_0_front => 7,
@@ -71,7 +71,7 @@ pub const ChannelLayout = enum(i32) {
 test "test_channel_count" {
     try std.testing.expectEqual(@as(usize, 1), ChannelLayout.mono.channel_count());
     try std.testing.expectEqual(@as(usize, 2), ChannelLayout.stereo.channel_count());
-    try std.testing.expectEqual(@as(usize, 4), ChannelLayout.surround.channel_count());
+    try std.testing.expectEqual(@as(usize, 3), ChannelLayout.surround.channel_count());
     try std.testing.expectEqual(@as(usize, 5), ChannelLayout.layout_5_0.channel_count());
     try std.testing.expectEqual(@as(usize, 6), ChannelLayout.layout_6_0.channel_count());
     try std.testing.expectEqual(@as(usize, 7), ChannelLayout.layout_7_0.channel_count());
