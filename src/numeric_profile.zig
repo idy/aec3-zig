@@ -5,6 +5,12 @@ const std = @import("std");
 const NumericMode = @import("numeric_mode.zig").NumericMode;
 const FixedPoint = @import("fixed_point.zig").FixedPoint;
 
+/// Fixed-point-first default numeric mode used by public entry points.
+pub const DEFAULT_NUMERIC_MODE: NumericMode = .fixed_mcu_q15;
+
+/// Default profile bound to `DEFAULT_NUMERIC_MODE`.
+pub const DefaultProfile = profileFor(DEFAULT_NUMERIC_MODE);
+
 /// 为给定的数值模式获取对应的 profile
 /// 封闭设计：只允许两种预定义模式的合法映射
 pub fn profileFor(comptime mode: NumericMode) type {
@@ -26,3 +32,12 @@ pub const FixedMcuQ15Profile = struct {
     pub const Sample = FixedPoint(15);
     pub const ComplexSample = @import("complex.zig").Complex(FixedPoint(15));
 };
+
+test "default numeric mode is fixed_mcu_q15" {
+    try std.testing.expectEqual(NumericMode.fixed_mcu_q15, DEFAULT_NUMERIC_MODE);
+}
+
+test "default profile sample type is Q15" {
+    const Q15 = FixedPoint(15);
+    try std.testing.expect(@TypeOf(DefaultProfile.Sample.zero()) == Q15);
+}
