@@ -61,3 +61,5 @@ pub const SubbandErleEstimator = @import("audio_processing/aec3/subband_erle_est
 pub const StationarityEstimator = @import("audio_processing/aec3/stationarity_estimator.zig").StationarityEstimator;
 pub const ReverbDecayEstimator = @import("audio_processing/aec3/reverb_decay_estimator.zig").ReverbDecayEstimator;
 pub const SignalDependentErleEstimator = @import("audio_processing/aec3/signal_dependent_erle_estimator.zig").SignalDependentErleEstimator;
+pub const ErleEstimator = @import("audio_processing/aec3/erle_estimator.zig").ErleEstimator;
+pub const ReverbModelEstimator = @import("audio_processing/aec3/reverb_model_estimator.zig").ReverbModelEstimator;

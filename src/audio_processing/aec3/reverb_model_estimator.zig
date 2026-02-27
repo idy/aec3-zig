@@ -127,7 +127,7 @@ test "reverb_model_estimator not_changing_decay" {
     defer allocator.free(h);
     @memset(h, 0.0);
 
-    var freq_resp = try allocator.alloc([FFT_LENGTH_BY_2_PLUS_1]f32, num_blocks);
+    const freq_resp = try allocator.alloc([FFT_LENGTH_BY_2_PLUS_1]f32, num_blocks);
     defer allocator.free(freq_resp);
     for (freq_resp) |*block| block.* = [_]f32{0.0} ** FFT_LENGTH_BY_2_PLUS_1;
 
@@ -155,7 +155,7 @@ test "reverb_model_estimator stationary skip" {
     const h = try allocator.alloc(f32, num_blocks * common.FFT_LENGTH_BY_2);
     defer allocator.free(h);
     @memset(h, 0.0);
-    var freq_resp = try allocator.alloc([FFT_LENGTH_BY_2_PLUS_1]f32, num_blocks);
+    const freq_resp = try allocator.alloc([FFT_LENGTH_BY_2_PLUS_1]f32, num_blocks);
     defer allocator.free(freq_resp);
     for (freq_resp) |*block| block.* = [_]f32{0.0} ** FFT_LENGTH_BY_2_PLUS_1;
 
