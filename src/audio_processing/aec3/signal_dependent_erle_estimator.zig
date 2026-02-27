@@ -31,24 +31,18 @@ fn form_subband_map() [FFT_LENGTH_BY_2_PLUS_1]usize {
 }
 
 fn define_filter_section_sizes(
+    allocator: std.mem.Allocator,
     delay_headroom_blocks: usize,
     num_blocks: usize,
     num_sections: usize,
-) []const usize {
-    // Use a static buffer — max 64 sections is well beyond any reasonable config.
-    const MAX_SECTIONS = 64;
-    const Static = struct {
-        var buf: [MAX_SECTIONS]usize = undefined;
-    };
-
-    const n = @min(num_sections, MAX_SECTIONS);
-    const section_sizes = Static.buf[0..n];
+) ![]usize {
+    const section_sizes = try allocator.alloc(usize, num_sections);
     @memset(section_sizes, 0);
-    if (n == 0) return section_sizes;
+    if (num_sections == 0) return section_sizes;
 
     const filter_length_blocks = if (num_blocks > delay_headroom_blocks) num_blocks - delay_headroom_blocks else 0;
     var remaining_blocks = filter_length_blocks;
-    var remaining_sections = n;
+    var remaining_sections = num_sections;
     var estimator_size: usize = 2;
     var idx: usize = 0;
     while (remaining_sections > 1 and remaining_blocks > estimator_size * remaining_sections) {
@@ -57,20 +51,20 @@ fn define_filter_section_sizes(
         remaining_sections -= 1;
         estimator_size *= 2;
         idx += 1;
-        if (idx == n) break;
+        if (idx == num_sections) break;
     }
 
     if (remaining_sections == 0) return section_sizes;
 
     const last_group_size = if (remaining_sections > 0) remaining_blocks / remaining_sections else 0;
-    while (idx < n) : (idx += 1) {
+    while (idx < num_sections) : (idx += 1) {
         section_sizes[idx] = last_group_size;
     }
 
     if (remaining_sections > 0) {
         const used_blocks = last_group_size * remaining_sections;
-        if (n > 0) {
-            section_sizes[n - 1] += if (remaining_blocks > used_blocks) remaining_blocks - used_blocks else 0;
+        if (num_sections > 0) {
+            section_sizes[num_sections - 1] += if (remaining_blocks > used_blocks) remaining_blocks - used_blocks else 0;
         }
     }
 
@@ -92,7 +86,8 @@ fn set_sections_boundaries(
         return boundaries;
     }
 
-    const section_sizes = define_filter_section_sizes(delay_headroom_blocks, num_blocks, num_sections);
+    const section_sizes = try define_filter_section_sizes(allocator, delay_headroom_blocks, num_blocks, num_sections);
+    defer allocator.free(section_sizes);
     boundaries[0] = delay_headroom_blocks;
     var idx: usize = 0;
     var current_size: usize = 0;
