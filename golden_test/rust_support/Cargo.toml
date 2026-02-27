@@ -31,6 +31,10 @@ path = "src/gen_erle_reverb_golden.rs"
 name = "metrics-leafs-golden-generator"
 path = "src/gen_metrics_leafs_golden.rs"
 
+[[bin]]
+name = "aec3-blocks-golden"
+path = "src/gen_aec3_blocks_golden.rs"
+
 [dependencies]
 # Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
 # Use a fixed git revision for reproducible golden baseline across environments.

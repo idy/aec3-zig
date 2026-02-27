@@ -8,4 +8,5 @@ test {
     _ = @import("zig/fft.zig");
     _ = @import("zig/erle_reverb.zig");
     _ = @import("zig/metrics_leafs.zig");
+    _ = @import("zig/aec3_blocks.zig");
 }

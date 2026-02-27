@@ -1,18 +1,10 @@
 const std = @import("std");
 const aec3_common = @import("aec3_common.zig");
 const FixedPoint = @import("../../fixed_point.zig").FixedPoint;
+pub const DownsampledRenderBuffer = @import("downsampled_render_buffer.zig").DownsampledRenderBuffer;
 
 const SATURATION_LIMIT: f32 = 32_000.0;
 const Q15 = FixedPoint(15);
-
-pub const DownsampledRenderBuffer = struct {
-    buffer: []f32,
-    read: usize,
-
-    pub fn init(storage: []f32) DownsampledRenderBuffer {
-        return .{ .buffer = storage, .read = 0 };
-    }
-};
 
 pub const LagEstimate = struct {
     accuracy: f32,
