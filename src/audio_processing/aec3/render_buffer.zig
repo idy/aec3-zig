@@ -92,3 +92,41 @@ test "render_buffer spectral_sum accumulates channels" {
     rb.set_render_activity(true);
     try std.testing.expect(rb.get_render_activity());
 }
+
+test "render_buffer block spectrum position and headroom" {
+    var bb = try block_buffer.BlockBuffer.init(std.testing.allocator, 4, 1, 1, common.BLOCK_SIZE);
+    defer bb.deinit();
+    var sb = try spectrum_buffer.SpectrumBuffer.init(std.testing.allocator, 4, 1);
+    defer sb.deinit();
+    var fb = try fft_buffer.FftBuffer.init(std.testing.allocator, 4, 1);
+    defer fb.deinit();
+
+    bb.buffer[2][0][0][0] = 9.0;
+    bb.read = 2;
+    sb.read = 1;
+    sb.write = 3;
+    fb.read = 1;
+    fb.write = 3;
+    sb.buffer[1][0][0] = 7.0;
+
+    const rb = RenderBuffer.init(&bb, &sb, &fb, true);
+    try std.testing.expectEqual(@as(f32, 9.0), rb.block(0)[0][0][0]);
+    try std.testing.expectEqual(@as(f32, 7.0), rb.spectrum(0)[0][0]);
+    try std.testing.expectEqual(@as(usize, 1), rb.position());
+    try std.testing.expectEqual(@as(usize, 2), rb.headroom());
+    try std.testing.expect(rb.get_render_activity());
+}
+
+test "render_buffer spectral_sum with zero spectra yields zeros" {
+    var bb = try block_buffer.BlockBuffer.init(std.testing.allocator, 2, 1, 1, common.BLOCK_SIZE);
+    defer bb.deinit();
+    var sb = try spectrum_buffer.SpectrumBuffer.init(std.testing.allocator, 2, 1);
+    defer sb.deinit();
+    var fb = try fft_buffer.FftBuffer.init(std.testing.allocator, 2, 1);
+    defer fb.deinit();
+
+    const rb = RenderBuffer.init(&bb, &sb, &fb, false);
+    var sum: [FFT_LENGTH_BY_2_PLUS_1]f32 = undefined;
+    rb.spectral_sum(0, &sum);
+    for (sum) |v| try std.testing.expectEqual(@as(f32, 0.0), v);
+}

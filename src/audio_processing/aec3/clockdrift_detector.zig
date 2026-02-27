@@ -60,3 +60,15 @@ test "clockdrift_detector transition" {
     d.update(1003);
     try std.testing.expectEqual(ClockDriftLevel.verified, d.level());
 }
+
+test "clockdrift_detector stable stream eventually resets to none" {
+    var d = ClockDriftDetector.init();
+    d.update(10);
+    d.update(11);
+    d.update(12);
+    d.update(13);
+    try std.testing.expectEqual(ClockDriftLevel.verified, d.level());
+
+    for (0..7600) |_| d.update(13);
+    try std.testing.expectEqual(ClockDriftLevel.none, d.level());
+}

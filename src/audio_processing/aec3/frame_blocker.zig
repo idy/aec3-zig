@@ -63,7 +63,7 @@ pub const FrameBlocker = struct {
 
     pub fn insert_sub_frame_and_extract_block(
         self: *Self,
-        sub_frame: []const []const []const f32,
+        sub_frame: [][][]f32,
         block: [][][]f32,
     ) void {
         std.debug.assert(sub_frame.len == self.num_bands);
@@ -77,14 +77,18 @@ pub const FrameBlocker = struct {
                 std.debug.assert(block[b][c].len == BLOCK_SIZE);
 
                 const buffered = self.buffered_len[b][c];
-                std.debug.assert(buffered <= BLOCK_SIZE - (SUB_FRAME_LENGTH - BLOCK_SIZE));
-                const need = BLOCK_SIZE - buffered;
+                std.debug.assert(buffered <= BLOCK_SIZE);
+                const need = if (buffered < BLOCK_SIZE) BLOCK_SIZE - buffered else 0;
+                std.debug.assert(need <= SUB_FRAME_LENGTH);
 
                 @memcpy(block[b][c][0..buffered], self.buffer[b][c][0..buffered]);
-                @memcpy(block[b][c][buffered..BLOCK_SIZE], sub_frame[b][c][0..need]);
+                if (need > 0) {
+                    @memcpy(block[b][c][buffered..BLOCK_SIZE], sub_frame[b][c][0..need]);
+                }
 
-                const remain = SUB_FRAME_LENGTH - need;
-                @memcpy(self.buffer[b][c][0..remain], sub_frame[b][c][need..SUB_FRAME_LENGTH]);
+                const available_tail = SUB_FRAME_LENGTH - need;
+                const remain = @min(available_tail, BLOCK_SIZE);
+                @memcpy(self.buffer[b][c][0..remain], sub_frame[b][c][need .. need + remain]);
                 self.buffered_len[b][c] = remain;
             }
         }
@@ -152,4 +156,58 @@ test "frame_blocker basic continuity" {
     blocker.insert_sub_frame_and_extract_block(sub, blk);
     try std.testing.expectEqual(@as(f32, 0.0), blk[0][0][0]);
     try std.testing.expectEqual(@as(f32, 63.0), blk[0][0][63]);
+}
+
+test "frame_blocker at least ten consecutive calls remain stable" {
+    const allocator = std.testing.allocator;
+    var blocker = try FrameBlocker.init(allocator, 1, 1);
+    defer blocker.deinit();
+
+    const sub = try alloc_tensor(allocator, 1, 1, SUB_FRAME_LENGTH);
+    defer free_tensor(allocator, sub);
+    const blk = try alloc_tensor(allocator, 1, 1, BLOCK_SIZE);
+    defer free_tensor(allocator, blk);
+
+    var extracted_blocks: usize = 0;
+    for (0..10) |k| {
+        for (0..SUB_FRAME_LENGTH) |i| {
+            sub[0][0][i] = @as(f32, @floatFromInt(k * SUB_FRAME_LENGTH + i));
+        }
+        blocker.insert_sub_frame_and_extract_block(sub, blk);
+        if (blocker.is_block_available()) {
+            blocker.extract_block(blk);
+            extracted_blocks += 1;
+        }
+    }
+
+    try std.testing.expect(extracted_blocks >= 1);
+}
+
+test "frame_blocker extract_block clears availability" {
+    const allocator = std.testing.allocator;
+    var blocker = try FrameBlocker.init(allocator, 1, 1);
+    defer blocker.deinit();
+
+    const sub = try alloc_tensor(allocator, 1, 1, SUB_FRAME_LENGTH);
+    defer free_tensor(allocator, sub);
+    const blk = try alloc_tensor(allocator, 1, 1, BLOCK_SIZE);
+    defer free_tensor(allocator, blk);
+
+    for (0..SUB_FRAME_LENGTH) |i| sub[0][0][i] = @as(f32, @floatFromInt(i));
+    blocker.insert_sub_frame_and_extract_block(sub, blk);
+    try std.testing.expect(blocker.is_block_available());
+    blocker.extract_block(blk);
+    try std.testing.expect(!blocker.is_block_available());
+}
+
+test "frame_blocker init rejects invalid dimensions" {
+    try std.testing.expectError(error.InvalidBandCount, FrameBlocker.init(std.testing.allocator, 0, 1));
+    try std.testing.expectError(error.InvalidChannelCount, FrameBlocker.init(std.testing.allocator, 1, 0));
+}
+
+test "frame_blocker init rolls back on allocation failure" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
+    failing.fail_index = failing.alloc_index;
+    try std.testing.expectError(error.OutOfMemory, FrameBlocker.init(alloc, 1, 1));
 }

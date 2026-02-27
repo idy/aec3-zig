@@ -63,3 +63,20 @@ test "moving_average known sequence" {
     ma.average(&[_]f32{2}, out[0..]);
     try std.testing.expectApproxEqAbs(@as(f32, 1.5), out[0], 1e-6);
 }
+
+test "moving_average window 1 passthrough" {
+    var ma = try MovingAverage.init(std.testing.allocator, 3, 1);
+    defer ma.deinit();
+
+    const input = [_]f32{ 2.0, 4.0, 6.0 };
+    var output = [_]f32{0.0} ** 3;
+    ma.average(input[0..], output[0..]);
+    try std.testing.expectEqualSlices(f32, input[0..], output[0..]);
+}
+
+test "moving_average init rolls back on allocation failure" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
+    failing.fail_index = failing.alloc_index;
+    try std.testing.expectError(error.OutOfMemory, MovingAverage.init(alloc, 8, 4));
+}

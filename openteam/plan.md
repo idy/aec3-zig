@@ -19,6 +19,18 @@
 - [x] `zig build` 已通过。
 - [x] `zig fmt --check --ast-check src golden_test build.zig` 已通过。
 
+## Reviewer 要求修改
+
+### P0: 必须修改
+- [x] `golden_test/zig/aec3_blocks.zig` 不能再是 TODO 占位测试。
+- [x] 修复 `block_framer` 的状态机与边界计算，保证初始状态即可稳定运行。
+- [x] 修复 `frame_blocker` 连续调用断言失败问题。
+- [x] 修复 `block_delay_buffer` 多通道处理错误。
+- [x] 补齐公开函数测试覆盖到验收门槛。
+
+### P1: 建议修改
+- [ ] PR 标题与描述需为英文，并包含 `Summary` 与 `Testing`。
+
 ## Reviewer 回检（2026-02-27）
 
 ### 已确认修复
@@ -26,17 +38,14 @@
 - [x] 修复 `block_delay_buffer` 仅处理 channel 0 的问题。
 
 ### P0: 回检后仍必须修改
-- [x] 修复 `frame_blocker` 连续调用断言失败（状态机不闭合）
+- [x] 修复 `frame_blocker` 连续调用断言失败（状态机不闭合）。
   - 结果：已重构 `buffered/need/remain` 推导，状态闭合；新增 10 次连续调用稳定性测试并通过。
 
-- [x] 修复 `block_framer` 连续调用后落入 `buffered=0` 不可处理状态
+- [x] 修复 `block_framer` 连续调用后落入 `buffered=0` 不可处理状态。
   - 结果：已增加 `buffered==0` 处理分支并修正循环推进；新增 10 次连续调用稳定测试并通过。
 
-- [x] 提升 golden 断言强度，禁止宽松阈值掩盖错误
+- [x] 提升 golden 断言强度，禁止宽松阈值掩盖错误。
   - 结果：已移除 `abs < 20.0`；基础 case 使用 `expectApproxEqAbs(1e-5)`，跨边界 case 使用误差统计阈值（max/mean/p95）断言。
 
-- [x] 继续补齐公开函数“正常 + 边界”成对覆盖
+- [x] 继续补齐公开函数“正常 + 边界”成对覆盖。
   - 结果：11 个模块已补齐公开 API 的正常/边界覆盖，并补充关键 OOM 回滚测试。
-
-### P1: 建议修改
-- [ ] PR 标题与描述需为英文，并包含 `Summary` 与 `Testing`。

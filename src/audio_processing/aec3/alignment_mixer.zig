@@ -134,3 +134,45 @@ test "alignment_mixer downmix average" {
     mixer.produce_output(x[0..], &y);
     try std.testing.expectApproxEqAbs(@as(f32, 2.0), y[0], 1e-6);
 }
+
+test "alignment_mixer fixed mode uses first channel" {
+    const cfg = config.AlignmentMixing{
+        .downmix = false,
+        .adaptive_selection = false,
+        .activity_power_threshold = 0.01,
+        .prefer_first_two_channels = false,
+    };
+    var mixer = try AlignmentMixer.init(std.testing.allocator, 2, cfg);
+    defer mixer.deinit();
+
+    var x = [_][BLOCK_SIZE]f32{ [_]f32{5.0} ** BLOCK_SIZE, [_]f32{9.0} ** BLOCK_SIZE };
+    var y: [BLOCK_SIZE]f32 = undefined;
+    mixer.produce_output(x[0..], &y);
+    try std.testing.expectApproxEqAbs(@as(f32, 5.0), y[0], 1e-6);
+}
+
+test "alignment_mixer rejects zero channels" {
+    const cfg = config.AlignmentMixing{
+        .downmix = false,
+        .adaptive_selection = true,
+        .activity_power_threshold = 0.01,
+        .prefer_first_two_channels = false,
+    };
+    try std.testing.expectError(error.InvalidChannelCount, AlignmentMixer.init(std.testing.allocator, 0, cfg));
+}
+
+test "alignment_mixer adaptive mode chooses stronger channel" {
+    const cfg = config.AlignmentMixing{
+        .downmix = false,
+        .adaptive_selection = true,
+        .activity_power_threshold = 0.0001,
+        .prefer_first_two_channels = false,
+    };
+    var mixer = try AlignmentMixer.init(std.testing.allocator, 2, cfg);
+    defer mixer.deinit();
+
+    var x = [_][BLOCK_SIZE]f32{ [_]f32{0.1} ** BLOCK_SIZE, [_]f32{3.0} ** BLOCK_SIZE };
+    var y: [BLOCK_SIZE]f32 = undefined;
+    mixer.produce_output(x[0..], &y);
+    try std.testing.expectApproxEqAbs(@as(f32, 3.0), y[0], 1e-6);
+}

@@ -10,7 +10,6 @@ pub const DownsampledRenderBuffer = struct {
 
     pub fn init(storage: []f32) Self {
         std.debug.assert(storage.len > 0);
-        @memset(storage, 0.0);
         return .{ .buffer = storage, .write = 0, .read = 0, .size = storage.len };
     }
 
@@ -66,4 +65,30 @@ test "downsampled_render_buffer index wrap" {
     rb.inc_write_index();
     try std.testing.expectEqual(@as(usize, 0), rb.write);
     try std.testing.expectEqual(@as(usize, 4), rb.offset_index(0, -1));
+}
+
+test "downsampled_render_buffer init keeps existing storage content" {
+    var store = [_]f32{ 3.0, 4.0, 5.0 };
+    const rb = DownsampledRenderBuffer.init(store[0..]);
+    try std.testing.expectEqual(@as(f32, 3.0), rb.buffer[0]);
+    try std.testing.expectEqual(@as(f32, 4.0), rb.buffer[1]);
+}
+
+test "downsampled_render_buffer update read/write index operations" {
+    var store = [_]f32{ 0.0, 1.0, 2.0, 3.0 };
+    var rb = DownsampledRenderBuffer.init(store[0..]);
+
+    rb.update_write_index(2);
+    try std.testing.expectEqual(@as(usize, 2), rb.write);
+    rb.dec_write_index();
+    try std.testing.expectEqual(@as(usize, 1), rb.write);
+    rb.inc_write_index();
+    try std.testing.expectEqual(@as(usize, 2), rb.write);
+
+    rb.update_read_index(-1);
+    try std.testing.expectEqual(@as(usize, 3), rb.read);
+    rb.inc_read_index();
+    try std.testing.expectEqual(@as(usize, 0), rb.read);
+    rb.dec_read_index();
+    try std.testing.expectEqual(@as(usize, 3), rb.read);
 }

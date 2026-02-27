@@ -17,17 +17,20 @@ pub const Decimator = struct {
             return error.InvalidDownSamplingFactor;
         }
 
-        const anti_alias_params = switch (down_sampling_factor) {
-            2 => low_pass_filter_ds2(),
-            4 => low_pass_filter_ds4(),
-            8 => band_pass_filter_ds8(),
+        const anti_alias_params: []const cascaded_biquad_filter.BiQuadParam = switch (down_sampling_factor) {
+            2 => low_pass_filter_ds2()[0..],
+            4 => low_pass_filter_ds4()[0..],
+            8 => band_pass_filter_ds8()[0..],
             else => unreachable,
         };
-        const noise_params = if (down_sampling_factor == 8) pass_through_filter() else high_pass_filter();
+        const noise_params: []const cascaded_biquad_filter.BiQuadParam = if (down_sampling_factor == 8)
+            pass_through_filter()[0..]
+        else
+            high_pass_filter()[0..];
 
-        var anti = try cascaded_biquad_filter.CascadedBiQuadFilter.from_params(allocator, anti_alias_params[0..]);
+        var anti = try cascaded_biquad_filter.CascadedBiQuadFilter.from_params(allocator, anti_alias_params);
         errdefer anti.deinit();
-        const noise = try cascaded_biquad_filter.CascadedBiQuadFilter.from_params(allocator, noise_params[0..]);
+        const noise = try cascaded_biquad_filter.CascadedBiQuadFilter.from_params(allocator, noise_params);
 
         return .{
             .down_sampling_factor = down_sampling_factor,
@@ -105,4 +108,23 @@ test "decimator output length and stride" {
 
 test "decimator rejects invalid factor" {
     try std.testing.expectError(error.InvalidDownSamplingFactor, Decimator.init(std.testing.allocator, 3));
+}
+
+test "decimator valid factors initialize and process finite values" {
+    const input = [_]f32{0.5} ** BLOCK_SIZE;
+    inline for (.{ 2, 4, 8 }) |factor| {
+        var d = try Decimator.init(std.testing.allocator, factor);
+        defer d.deinit();
+
+        var out = [_]f32{0.0} ** (BLOCK_SIZE / factor);
+        d.decimate(input[0..], out[0..]);
+        for (out) |v| try std.testing.expect(std.math.isFinite(v));
+    }
+}
+
+test "decimator init rolls back on allocation failure" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
+    failing.fail_index = failing.alloc_index;
+    try std.testing.expectError(error.OutOfMemory, Decimator.init(alloc, 2));
 }

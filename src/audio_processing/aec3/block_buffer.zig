@@ -118,3 +118,32 @@ test "block_buffer ring semantics basic" {
     try std.testing.expectEqual(@as(f32, 3.0), bb.buffer[0][0][0][0]);
     try std.testing.expectEqual(@as(f32, 2.0), bb.buffer[1][0][0][0]);
 }
+
+test "block_buffer index helpers cover wrap and offset" {
+    var bb = try BlockBuffer.init(std.testing.allocator, 4, 1, 1, 2);
+    defer bb.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), bb.inc_index(0));
+    try std.testing.expectEqual(@as(usize, 0), bb.inc_index(3));
+    try std.testing.expectEqual(@as(usize, 3), bb.dec_index(0));
+    try std.testing.expectEqual(@as(usize, 2), bb.dec_index(3));
+    try std.testing.expectEqual(@as(usize, 3), bb.offset_index(0, -1));
+    try std.testing.expectEqual(@as(usize, 2), bb.offset_index(1, 1));
+
+    bb.update_write_index(2);
+    try std.testing.expectEqual(@as(usize, 2), bb.write);
+    bb.dec_write_index();
+    try std.testing.expectEqual(@as(usize, 1), bb.write);
+    bb.inc_read_index();
+    try std.testing.expectEqual(@as(usize, 1), bb.read);
+    bb.update_read_index(-1);
+    try std.testing.expectEqual(@as(usize, 0), bb.read);
+}
+
+test "block_buffer init rolls back on allocation failure" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
+
+    failing.fail_index = failing.alloc_index;
+    try std.testing.expectError(error.OutOfMemory, BlockBuffer.init(alloc, 3, 2, 2, 8));
+}

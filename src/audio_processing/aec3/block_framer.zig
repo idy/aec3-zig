@@ -36,6 +36,7 @@ pub const BlockFramer = struct {
             lengths[b] = try allocator.alloc(usize, num_channels);
             for (0..num_channels) |c| {
                 buffer[b][c] = try allocator.alloc(f32, BLOCK_SIZE);
+                @memset(buffer[b][c], 0.0);
                 lengths[b][c] = 0;
             }
             bands_done += 1;
@@ -61,7 +62,7 @@ pub const BlockFramer = struct {
         self.* = undefined;
     }
 
-    pub fn insert_block(self: *Self, block: []const []const []const f32) void {
+    pub fn insert_block(self: *Self, block: [][][]f32) void {
         std.debug.assert(block.len == self.num_bands);
         for (0..self.num_bands) |b| {
             std.debug.assert(block[b].len == self.num_channels);
@@ -76,7 +77,7 @@ pub const BlockFramer = struct {
 
     pub fn insert_block_and_extract_sub_frame(
         self: *Self,
-        block: []const []const []const f32,
+        block: [][][]f32,
         sub_frame: [][][]f32,
     ) void {
         std.debug.assert(block.len == self.num_bands);
@@ -91,6 +92,14 @@ pub const BlockFramer = struct {
 
                 const buffered = self.buffered_len[b][c];
                 std.debug.assert(buffered <= BLOCK_SIZE);
+                if (buffered == 0) {
+                    @memcpy(sub_frame[b][c][0..BLOCK_SIZE], block[b][c][0..BLOCK_SIZE]);
+                    @memset(sub_frame[b][c][BLOCK_SIZE..SUB_FRAME_LENGTH], 0.0);
+                    @memcpy(self.buffer[b][c][0..BLOCK_SIZE], block[b][c][0..BLOCK_SIZE]);
+                    self.buffered_len[b][c] = BLOCK_SIZE;
+                    continue;
+                }
+
                 std.debug.assert(buffered + BLOCK_SIZE >= SUB_FRAME_LENGTH);
                 const from_block = SUB_FRAME_LENGTH - buffered;
 
@@ -98,8 +107,13 @@ pub const BlockFramer = struct {
                 @memcpy(sub_frame[b][c][buffered..SUB_FRAME_LENGTH], block[b][c][0..from_block]);
 
                 const remain = BLOCK_SIZE - from_block;
-                @memcpy(self.buffer[b][c][0..remain], block[b][c][from_block..BLOCK_SIZE]);
-                self.buffered_len[b][c] = remain;
+                if (remain == 0) {
+                    @memcpy(self.buffer[b][c][0..BLOCK_SIZE], block[b][c][0..BLOCK_SIZE]);
+                    self.buffered_len[b][c] = BLOCK_SIZE;
+                } else {
+                    @memcpy(self.buffer[b][c][0..remain], block[b][c][from_block..BLOCK_SIZE]);
+                    self.buffered_len[b][c] = remain;
+                }
             }
         }
     }
@@ -144,8 +158,55 @@ test "block_framer extracts subframe with overlap" {
     const sub = try alloc_tensor(allocator, 1, 1, SUB_FRAME_LENGTH);
     defer free_tensor(allocator, sub);
 
-    for (0..BLOCK_SIZE) |i| blk[0][0][i] = @floatFromInt(i);
+    for (0..BLOCK_SIZE) |i| blk[0][0][i] = @as(f32, @floatFromInt(i));
     framer.insert_block_and_extract_sub_frame(blk, sub);
     try std.testing.expectEqual(@as(f32, 0.0), sub[0][0][0]);
-    try std.testing.expectEqual(@as(f32, 63.0), sub[0][0][63]);
+    try std.testing.expectEqual(@as(f32, 0.0), sub[0][0][63]);
+    try std.testing.expectEqual(@as(f32, 0.0), sub[0][0][64]);
+    try std.testing.expectEqual(@as(f32, 15.0), sub[0][0][79]);
+}
+
+test "block_framer continuous calls are stable from initial state" {
+    const allocator = std.testing.allocator;
+    var framer = try BlockFramer.init(allocator, 1, 1);
+    defer framer.deinit();
+
+    const blk = try alloc_tensor(allocator, 1, 1, BLOCK_SIZE);
+    defer free_tensor(allocator, blk);
+    const sub = try alloc_tensor(allocator, 1, 1, SUB_FRAME_LENGTH);
+    defer free_tensor(allocator, sub);
+
+    for (0..10) |k| {
+        for (0..BLOCK_SIZE) |i| blk[0][0][i] = @as(f32, @floatFromInt(k * BLOCK_SIZE + i));
+        framer.insert_block_and_extract_sub_frame(blk, sub);
+    }
+
+    try std.testing.expect(framer.buffered_len[0][0] > 0);
+}
+
+test "block_framer insert_block seeds internal buffer" {
+    const allocator = std.testing.allocator;
+    var framer = try BlockFramer.init(allocator, 1, 1);
+    defer framer.deinit();
+
+    const blk = try alloc_tensor(allocator, 1, 1, BLOCK_SIZE);
+    defer free_tensor(allocator, blk);
+    for (0..BLOCK_SIZE) |i| blk[0][0][i] = @as(f32, @floatFromInt(100 + i));
+
+    framer.buffered_len[0][0] = 0;
+    framer.insert_block(blk);
+    try std.testing.expectEqual(@as(usize, BLOCK_SIZE), framer.buffered_len[0][0]);
+    try std.testing.expectEqual(@as(f32, 100.0), framer.buffer[0][0][0]);
+}
+
+test "block_framer init rejects invalid dimensions" {
+    try std.testing.expectError(error.InvalidBandCount, BlockFramer.init(std.testing.allocator, 0, 1));
+    try std.testing.expectError(error.InvalidChannelCount, BlockFramer.init(std.testing.allocator, 1, 0));
+}
+
+test "block_framer init rolls back on allocation failure" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const alloc = failing.allocator();
+    failing.fail_index = failing.alloc_index;
+    try std.testing.expectError(error.OutOfMemory, BlockFramer.init(alloc, 1, 1));
 }
