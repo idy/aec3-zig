@@ -17,15 +17,19 @@
 use aec3::api::config::EchoCanceller3Config;
 use aec3::audio_processing::aec3::{
     aec3_common::{num_bands_for_rate, BLOCK_SIZE, FFT_LENGTH_BY_2, FFT_LENGTH_BY_2_PLUS_1},
+    block_buffer::BlockBuffer,
     erl_estimator::ErlEstimator,
     erle_estimator::ErleEstimator,
+    fft_buffer::FftBuffer,
     fullband_erle_estimator::FullBandErleEstimator,
+    render_buffer::RenderBuffer,
     render_delay_buffer::RenderDelayBuffer,
     reverb_decay_estimator::ReverbDecayEstimator,
     reverb_frequency_response::ReverbFrequencyResponse,
     reverb_model::ReverbModel,
     reverb_model_estimator::ReverbModelEstimator,
     signal_dependent_erle_estimator::SignalDependentErleEstimator,
+    spectrum_buffer::SpectrumBuffer,
     stationarity_estimator::StationarityEstimator,
     subband_erle_estimator::SubbandErleEstimator,
 };
@@ -787,8 +791,7 @@ fn gen_erle_estimator_vectors() {
         e2[0].fill(y2[0][0] / 10.0); // ERLE = 10
 
         let converged = vec![true; num_capture_channels];
-        let filter_freq_resp: Vec<Vec<[f32; FFT_LENGTH_BY_2_PLUS_1]>> =
-            vec![
+        let filter_freq_resp: Vec<Vec<[f32; FFT_LENGTH_BY_2_PLUS_1]>> = vec![
                 vec![[0.0; FFT_LENGTH_BY_2_PLUS_1]; config.filter.main.length_blocks];
                 num_capture_channels
             ];
@@ -814,9 +817,10 @@ fn gen_erle_estimator_vectors() {
 fn gen_signal_dependent_erle_vectors() {
     println!("\n# Signal Dependent ERLE Estimator Vectors");
 
-    // Case 1: num_sections=2, simple spectrum buffer scenario
+    // Case 1: manually constructed SpectrumBuffer with deterministic data.
+    // This avoids RenderDelayBuffer (which does FFT processing) so Zig can
+    // reproduce the exact same spectrum buffer contents for true parity.
     {
-        let sample_rate = 16_000i32;
         let num_render_channels = 1;
         let num_capture_channels = 1;
         let mut config = EchoCanceller3Config::default();
@@ -826,77 +830,69 @@ fn gen_signal_dependent_erle_vectors() {
         config.delay.delay_headroom_samples = 0;
         config.delay.hysteresis_limit_blocks = 0;
         assert!(config.validate());
-        let num_bands = num_bands_for_rate(sample_rate);
 
-        let mut render_delay_buffer =
-            RenderDelayBuffer::new(config.clone(), sample_rate, num_render_channels);
-        render_delay_buffer.align_from_delay(4);
+        let buf_size = 8usize;
+        let block_buffer = BlockBuffer::new(buf_size, 1, num_render_channels, BLOCK_SIZE);
+        let mut spectrum_buffer = SpectrumBuffer::new(buf_size, num_render_channels);
+        let fft_buffer = FftBuffer::new(buf_size, num_render_channels);
+
+        // Fill spectrum buffer with deterministic data: slot i, bin k => (i+1)*(k+1)*100
+        for slot in 0..buf_size {
+            for k in 0..FFT_LENGTH_BY_2_PLUS_1 {
+                spectrum_buffer.buffer[slot][0][k] = ((slot + 1) as f32) * ((k + 1) as f32) * 100.0;
+            }
+        }
+
+        // Dump spectrum buffer so Zig can reproduce exactly
+        println!("SIGNAL_DEP_CASE1_BUF_SIZE={}", buf_size);
+        for slot in 0..buf_size {
+            for k in 0..FFT_LENGTH_BY_2_PLUS_1 {
+                println!(
+                    "SIGNAL_DEP_CASE1_SPECTRUM[{}][{}]={:.9}",
+                    slot, k, spectrum_buffer.buffer[slot][0][k]
+                );
+            }
+        }
+
+        let render_buffer = RenderBuffer::new(&block_buffer, &spectrum_buffer, &fft_buffer, true);
+        let position = render_buffer.position();
+        println!("SIGNAL_DEP_CASE1_POSITION={}", position);
 
         let mut estimator = SignalDependentErleEstimator::new(&config, num_capture_channels);
 
         let average_erle = vec![[config.erle.max_l; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
         let converged = vec![true; num_capture_channels];
-
-        // Set up filter frequency responses: all blocks have gain 1
-        let mut h2 = vec![
-            vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; config.filter.main.length_blocks];
+        let h2 = vec![
+            vec![[1.0f32; FFT_LENGTH_BY_2_PLUS_1]; config.filter.main.length_blocks];
             num_capture_channels
         ];
-        for block in &mut h2[0] {
-            block.fill(1.0);
+
+        // x2 = current slot spectrum, y2 = x2 + 0.01*prev, e2 = 0.01*prev
+        let idx = position;
+        let prev_idx = spectrum_buffer.offset_index(idx, 1);
+        let current = &spectrum_buffer.buffer[idx][0];
+        let previous = &spectrum_buffer.buffer[prev_idx][0];
+
+        let mut x2 = [0.0f32; FFT_LENGTH_BY_2_PLUS_1];
+        x2.copy_from_slice(current);
+        let mut y2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
+        let mut e2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
+        for k in 0..FFT_LENGTH_BY_2_PLUS_1 {
+            e2[0][k] = 0.01 * previous[k];
+            y2[0][k] = current[k] + e2[0][k];
         }
 
-        let active_frame: [f32; BLOCK_SIZE] = {
-            let mut frame = [0.0f32; BLOCK_SIZE];
-            for (i, val) in frame.iter_mut().enumerate() {
-                val.clone_from(&(7459.88 + (i as f32) * 200.0));
-            }
-            frame
-        };
+        // Dump input vectors
+        print_vector_f32("SIGNAL_DEP_CASE1_X2", &x2);
+        print_vector_f32("SIGNAL_DEP_CASE1_Y2", &y2[0]);
+        print_vector_f32("SIGNAL_DEP_CASE1_E2", &e2[0]);
 
-        let mut toggle = 0i32;
-        let mut x = vec![vec![vec![0.0f32; BLOCK_SIZE]; num_render_channels]; num_bands];
-
-        for _ in 0..100 {
-            if toggle % 2 == 0 {
-                for band in &mut x {
-                    for ch in band {
-                        ch.fill(0.0);
-                    }
-                }
-            } else {
-                for band in &mut x {
-                    for ch in band {
-                        ch.copy_from_slice(&active_frame);
-                    }
-                }
-            }
-            toggle += 1;
-            render_delay_buffer.insert(&x);
-            render_delay_buffer.prepare_capture_processing();
-
-            let render_buffer = render_delay_buffer.render_buffer();
-            let spectrum_buffer = render_buffer.spectrum_buffer();
-            let idx = render_buffer.position();
-            let prev_idx = spectrum_buffer.offset_index(idx, 1);
-            let current = &spectrum_buffer.buffer[idx][0];
-            let previous = &spectrum_buffer.buffer[prev_idx][0];
-
-            let mut x2_spec = [0.0f32; FFT_LENGTH_BY_2_PLUS_1];
-            x2_spec.copy_from_slice(current);
-            let mut y2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
-            let mut e2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
-            for ch in 0..num_capture_channels {
-                for k in 0..FFT_LENGTH_BY_2_PLUS_1 {
-                    e2[ch][k] = 0.01 * previous[k];
-                    y2[ch][k] = current[k] + e2[ch][k];
-                }
-            }
-
+        // Run estimator for several iterations with same data
+        for _ in 0..50 {
             estimator.update(
                 &render_buffer,
                 &h2,
-                &x2_spec,
+                &x2,
                 &y2,
                 &e2,
                 &average_erle,
