@@ -59,3 +59,11 @@ pub const AudioBuffer = @import("audio_processing/audio_buffer.zig").AudioBuffer
 pub const Config = @import("api/config.zig");
 pub const Control = @import("api/control.zig");
 pub const ApmDataDumper = @import("audio_processing/logging/apm_data_dumper.zig").ApmDataDumper;
+
+// ERLE & Reverb estimation modules
+pub const SpectrumBuffer = @import("audio_processing/aec3/spectrum_buffer.zig").SpectrumBuffer;
+pub const ErlEstimator = @import("audio_processing/aec3/erl_estimator.zig").ErlEstimator;
+pub const ReverbModel = @import("audio_processing/aec3/reverb_model.zig").ReverbModel;
+pub const ReverbFrequencyResponse = @import("audio_processing/aec3/reverb_frequency_response.zig").ReverbFrequencyResponse;
+pub const FullBandErleEstimator = @import("audio_processing/aec3/fullband_erle_estimator.zig").FullBandErleEstimator;
+pub const SubbandErleEstimator = @import("audio_processing/aec3/subband_erle_estimator.zig").SubbandErleEstimator;
