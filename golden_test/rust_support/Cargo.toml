@@ -24,10 +24,6 @@ name = "ns-golden-generator"
 path = "src/gen_ns_golden.rs"
 
 [[bin]]
-name = "gen-aec3-delay-est-golden"
-path = "src/gen_aec3_delay_est_golden.rs"
-
-[[bin]]
 name = "erle-reverb-golden-generator"
 path = "src/gen_erle_reverb_golden.rs"
 
