@@ -69,3 +69,4 @@ pub const FullBandErleEstimator = @import("audio_processing/aec3/fullband_erle_e
 pub const SubbandErleEstimator = @import("audio_processing/aec3/subband_erle_estimator.zig").SubbandErleEstimator;
 pub const StationarityEstimator = @import("audio_processing/aec3/stationarity_estimator.zig").StationarityEstimator;
 pub const ReverbDecayEstimator = @import("audio_processing/aec3/reverb_decay_estimator.zig").ReverbDecayEstimator;
+pub const SignalDependentErleEstimator = @import("audio_processing/aec3/signal_dependent_erle_estimator.zig").SignalDependentErleEstimator;
