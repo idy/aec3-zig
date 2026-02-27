@@ -16,10 +16,11 @@
 
 use aec3::api::config::EchoCanceller3Config;
 use aec3::audio_processing::aec3::{
-    aec3_common::{BLOCK_SIZE, FFT_LENGTH_BY_2, FFT_LENGTH_BY_2_PLUS_1},
+    aec3_common::{num_bands_for_rate, BLOCK_SIZE, FFT_LENGTH_BY_2, FFT_LENGTH_BY_2_PLUS_1},
     erl_estimator::ErlEstimator,
     erle_estimator::ErleEstimator,
     fullband_erle_estimator::FullBandErleEstimator,
+    render_delay_buffer::RenderDelayBuffer,
     reverb_decay_estimator::ReverbDecayEstimator,
     reverb_frequency_response::ReverbFrequencyResponse,
     reverb_model::ReverbModel,
@@ -65,7 +66,7 @@ fn print_vector_bool(name: &str, data: &[bool]) {
 }
 
 fn main() {
-    // Generate vectors for each module
+    // Generate vectors for each module (all 10)
     gen_erl_estimator_vectors();
     gen_subband_erle_vectors();
     gen_fullband_erle_vectors();
@@ -74,6 +75,8 @@ fn main() {
     gen_reverb_decay_vectors();
     gen_reverb_frequency_response_vectors();
     gen_reverb_model_estimator_vectors();
+    gen_erle_estimator_vectors();
+    gen_signal_dependent_erle_vectors();
 }
 
 // ==================== ERL Estimator ====================
@@ -742,5 +745,165 @@ fn gen_reverb_model_estimator_vectors() {
             "REVERB_MODEL_ESTIMATOR_CASE2_MULTI_CHANNEL_DECAY={:.9}",
             estimator.reverb_decay()
         );
+    }
+}
+
+// ==================== ErleEstimator (aggregator) ====================
+
+fn gen_erle_estimator_vectors() {
+    println!("\n# ERLE Estimator (aggregator) Vectors");
+
+    // Case 1: num_sections=1 (no signal-dependent), strong echo, single channel
+    {
+        let sample_rate = 48_000i32;
+        let num_render_channels = 1;
+        let num_capture_channels = 1;
+        let config = EchoCanceller3Config::default(); // num_sections=1 by default
+        let num_bands = num_bands_for_rate(sample_rate);
+
+        let mut render_delay_buffer =
+            RenderDelayBuffer::new(config.clone(), sample_rate, num_render_channels);
+
+        let mut x = vec![vec![vec![0.0f32; BLOCK_SIZE]; num_render_channels]; num_bands];
+        // Fill with known frame data
+        for band in x.iter_mut() {
+            for channel in band.iter_mut() {
+                for (i, val) in channel.iter_mut().enumerate() {
+                    *val = 10000.0 + (i as f32) * 100.0;
+                }
+            }
+        }
+
+        render_delay_buffer.insert(&x);
+        render_delay_buffer.prepare_capture_processing();
+
+        let mut estimator = ErleEstimator::new(0, &config, num_capture_channels);
+
+        // Construct spectra with known ERLE ratio
+        let x2 = [100_000_000.0f32; FFT_LENGTH_BY_2_PLUS_1];
+        let mut y2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
+        let mut e2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
+        y2[0].fill(1_000_000_000.0);
+        e2[0].fill(y2[0][0] / 10.0); // ERLE = 10
+
+        let converged = vec![true; num_capture_channels];
+        let filter_freq_resp: Vec<Vec<[f32; FFT_LENGTH_BY_2_PLUS_1]>> =
+            vec![
+                vec![[0.0; FFT_LENGTH_BY_2_PLUS_1]; config.filter.main.length_blocks];
+                num_capture_channels
+            ];
+
+        for _ in 0..200 {
+            render_delay_buffer.insert(&x);
+            render_delay_buffer.prepare_capture_processing();
+            let render_buffer = render_delay_buffer.render_buffer();
+            estimator.update(&render_buffer, &filter_freq_resp, &x2, &y2, &e2, &converged);
+        }
+
+        print_vector_f32_2d("ERLE_ESTIMATOR_CASE1_ERLE", estimator.erle());
+        println!(
+            "ERLE_ESTIMATOR_CASE1_FULLBAND_LOG2={:.9}",
+            estimator.fullband_erle_log2()
+        );
+        print_vector_f32_2d("ERLE_ESTIMATOR_CASE1_ONSETS", estimator.erle_onsets());
+    }
+}
+
+// ==================== SignalDependentErleEstimator ====================
+
+fn gen_signal_dependent_erle_vectors() {
+    println!("\n# Signal Dependent ERLE Estimator Vectors");
+
+    // Case 1: num_sections=2, simple spectrum buffer scenario
+    {
+        let sample_rate = 16_000i32;
+        let num_render_channels = 1;
+        let num_capture_channels = 1;
+        let mut config = EchoCanceller3Config::default();
+        config.erle.num_sections = 2;
+        config.filter.main.length_blocks = 2;
+        config.filter.main_initial.length_blocks = 1;
+        config.delay.delay_headroom_samples = 0;
+        config.delay.hysteresis_limit_blocks = 0;
+        assert!(config.validate());
+        let num_bands = num_bands_for_rate(sample_rate);
+
+        let mut render_delay_buffer =
+            RenderDelayBuffer::new(config.clone(), sample_rate, num_render_channels);
+        render_delay_buffer.align_from_delay(4);
+
+        let mut estimator = SignalDependentErleEstimator::new(&config, num_capture_channels);
+
+        let average_erle = vec![[config.erle.max_l; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
+        let converged = vec![true; num_capture_channels];
+
+        // Set up filter frequency responses: all blocks have gain 1
+        let mut h2 = vec![
+            vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; config.filter.main.length_blocks];
+            num_capture_channels
+        ];
+        for block in &mut h2[0] {
+            block.fill(1.0);
+        }
+
+        let active_frame: [f32; BLOCK_SIZE] = {
+            let mut frame = [0.0f32; BLOCK_SIZE];
+            for (i, val) in frame.iter_mut().enumerate() {
+                val.clone_from(&(7459.88 + (i as f32) * 200.0));
+            }
+            frame
+        };
+
+        let mut toggle = 0i32;
+        let mut x = vec![vec![vec![0.0f32; BLOCK_SIZE]; num_render_channels]; num_bands];
+
+        for _ in 0..100 {
+            if toggle % 2 == 0 {
+                for band in &mut x {
+                    for ch in band {
+                        ch.fill(0.0);
+                    }
+                }
+            } else {
+                for band in &mut x {
+                    for ch in band {
+                        ch.copy_from_slice(&active_frame);
+                    }
+                }
+            }
+            toggle += 1;
+            render_delay_buffer.insert(&x);
+            render_delay_buffer.prepare_capture_processing();
+
+            let render_buffer = render_delay_buffer.render_buffer();
+            let spectrum_buffer = render_buffer.spectrum_buffer();
+            let idx = render_buffer.position();
+            let prev_idx = spectrum_buffer.offset_index(idx, 1);
+            let current = &spectrum_buffer.buffer[idx][0];
+            let previous = &spectrum_buffer.buffer[prev_idx][0];
+
+            let mut x2_spec = [0.0f32; FFT_LENGTH_BY_2_PLUS_1];
+            x2_spec.copy_from_slice(current);
+            let mut y2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
+            let mut e2 = vec![[0.0f32; FFT_LENGTH_BY_2_PLUS_1]; num_capture_channels];
+            for ch in 0..num_capture_channels {
+                for k in 0..FFT_LENGTH_BY_2_PLUS_1 {
+                    e2[ch][k] = 0.01 * previous[k];
+                    y2[ch][k] = current[k] + e2[ch][k];
+                }
+            }
+
+            estimator.update(
+                &render_buffer,
+                &h2,
+                &x2_spec,
+                &y2,
+                &e2,
+                &average_erle,
+                &converged,
+            );
+        }
+
+        print_vector_f32_2d("SIGNAL_DEP_ERLE_CASE1_ERLE", estimator.erle());
     }
 }
