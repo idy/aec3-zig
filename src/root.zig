@@ -67,3 +67,5 @@ pub const ReverbModel = @import("audio_processing/aec3/reverb_model.zig").Reverb
 pub const ReverbFrequencyResponse = @import("audio_processing/aec3/reverb_frequency_response.zig").ReverbFrequencyResponse;
 pub const FullBandErleEstimator = @import("audio_processing/aec3/fullband_erle_estimator.zig").FullBandErleEstimator;
 pub const SubbandErleEstimator = @import("audio_processing/aec3/subband_erle_estimator.zig").SubbandErleEstimator;
+pub const StationarityEstimator = @import("audio_processing/aec3/stationarity_estimator.zig").StationarityEstimator;
+pub const ReverbDecayEstimator = @import("audio_processing/aec3/reverb_decay_estimator.zig").ReverbDecayEstimator;
