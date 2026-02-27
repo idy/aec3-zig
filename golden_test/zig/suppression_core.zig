@@ -120,16 +120,17 @@ test "golden_residual_echo_case3_zero" {
 
 // ==================== Saturation Detector Tests ====================
 
-test "golden_saturation_case1_no_saturation" {
+test "golden_saturation_case1_threshold_detection" {
     const samples = test_utils.parseNamedF32(golden_text, "SATURATION_CASE1_SAMPLES", 64);
     const threshold = test_utils.parseScalarF32(golden_text, "SATURATION_CASE1_THRESHOLD");
 
-    // Verify no samples exceed threshold
+    // Samples ramp from 0 to 63000; threshold ~29490 (90% of 32767).
+    // Golden vector DETECTED=1: saturation IS present above threshold.
     const saturated = for (samples) |s| {
         if (@abs(s) > threshold) break true;
     } else false;
 
-    try std.testing.expect(!saturated);
+    try std.testing.expect(saturated);
 }
 
 test "golden_saturation_case2_with_saturation" {

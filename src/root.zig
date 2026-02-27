@@ -98,3 +98,19 @@ pub const SubbandNearendDetector = @import("audio_processing/aec3/subband_nearen
 pub const EchoAudibility = @import("audio_processing/aec3/echo_audibility.zig").EchoAudibility;
 pub const ComfortNoiseGenerator = @import("audio_processing/aec3/comfort_noise_generator.zig").ComfortNoiseGenerator;
 pub const MainFilterUpdateGain = @import("audio_processing/aec3/main_filter_update_gain.zig").MainFilterUpdateGain;
+pub const ShadowFilterUpdateGain = @import("audio_processing/aec3/shadow_filter_update_gain.zig").ShadowFilterUpdateGain;
+pub const SuppressionFilter = @import("audio_processing/aec3/suppression_filter.zig").SuppressionFilter;
+pub const SuppressionGain = @import("audio_processing/aec3/suppression_gain.zig").SuppressionGain;
+pub const ResidualEchoEstimator = @import("audio_processing/aec3/residual_echo_estimator.zig").ResidualEchoEstimator;
+
+// AEC3 state management modules
+pub const AvgRenderReverb = @import("audio_processing/aec3/avg_render_reverb.zig").AvgRenderReverb;
+pub const FilterDelay = @import("audio_processing/aec3/filter_delay.zig").FilterDelay;
+pub const FilteringQualityAnalyzer = @import("audio_processing/aec3/filtering_quality_analyzer.zig").FilteringQualityAnalyzer;
+pub const InitialState = @import("audio_processing/aec3/initial_state.zig").InitialState;
+pub const SaturationDetector = @import("audio_processing/aec3/saturation_detector.zig").SaturationDetector;
+pub const TransparentMode = @import("audio_processing/aec3/transparent_mode.zig").TransparentMode;
+pub const AecPhase = @import("audio_processing/aec3/aec_state.zig").AecPhase;
+pub const AecStateConfig = @import("audio_processing/aec3/aec_state.zig").AecStateConfig;
+pub const AecState = @import("audio_processing/aec3/aec_state.zig").AecState;
+pub const Subtractor = @import("audio_processing/aec3/subtractor.zig").Subtractor;
