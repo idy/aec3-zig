@@ -263,3 +263,79 @@ fn ulpDiff(a: f32, b: f32) u32 {
     const ob = orderedUlpBits(b);
     return @intCast(@abs(oa - ob));
 }
+
+/// Parse a 2D f32 array from golden vector text with format: NAME[ch][idx]=value
+pub fn parseNamedF32_2D(
+    text: []const u8,
+    comptime name: []const u8,
+    comptime num_channels: usize,
+    comptime num_bins: usize,
+) [num_channels][num_bins]f32 {
+    var out: [num_channels][num_bins]f32 = undefined;
+    var seen = [_][num_bins]bool{[_]bool{false} ** num_bins} ** num_channels;
+    const prefix = std.fmt.comptimePrint("{s}[", .{name});
+
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        // Parse format: NAME[ch][idx]=value
+        const ch_start = prefix.len;
+        const ch_end = std.mem.indexOfScalarPos(u8, line, ch_start, ']') orelse @panic("invalid channel line");
+        const ch = std.fmt.parseInt(usize, line[ch_start..ch_end], 10) catch @panic("invalid channel parse");
+        if (ch >= num_channels) @panic("channel out of range");
+
+        const idx_start = ch_end + 2; // Skip "]["
+        const idx_end = std.mem.indexOfScalarPos(u8, line, idx_start, ']') orelse @panic("invalid index line");
+        const idx = std.fmt.parseInt(usize, line[idx_start..idx_end], 10) catch @panic("invalid index parse");
+        if (idx >= num_bins) @panic("index out of range");
+
+        const eq = std.mem.indexOfScalarPos(u8, line, idx_end, '=') orelse @panic("invalid value line");
+        const val = std.fmt.parseFloat(f32, line[eq + 1 ..]) catch @panic("invalid float parse");
+
+        out[ch][idx] = val;
+        seen[ch][idx] = true;
+    }
+
+    for (seen, 0..) |ch_seen, ch| {
+        for (ch_seen, 0..) |ok, idx| {
+            if (!ok) {
+                std.debug.panic("golden vector incomplete for channel {d} index {d}", .{ ch, idx });
+            }
+        }
+    }
+    return out;
+}
+
+/// Parse scalar f32 value from golden vector text with format: NAME=value
+pub fn parseScalarF32(text: []const u8, comptime name: []const u8) f32 {
+    const prefix = std.fmt.comptimePrint("{s}=", .{name});
+
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        const val = std.fmt.parseFloat(f32, line[prefix.len..]) catch @panic("invalid float parse");
+        return val;
+    }
+
+    @panic("scalar value not found in golden vector");
+}
+
+/// Parse scalar usize value from golden vector text with format: NAME=value
+pub fn parseScalarUsize(text: []const u8, comptime name: []const u8) usize {
+    const prefix = std.fmt.comptimePrint("{s}=", .{name});
+
+    var it = std.mem.splitScalar(u8, text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (!std.mem.startsWith(u8, line, prefix)) continue;
+
+        const val = std.fmt.parseInt(usize, line[prefix.len..], 10) catch @panic("invalid int parse");
+        return val;
+    }
+
+    @panic("scalar value not found in golden vector");
+}
