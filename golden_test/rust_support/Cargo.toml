@@ -23,6 +23,10 @@ path = "src/gen_audio_infra_golden.rs"
 name = "ns-golden-generator"
 path = "src/gen_ns_golden.rs"
 
+[[bin]]
+name = "erle-reverb-golden-generator"
+path = "src/gen_erle_reverb_golden.rs"
+
 [dependencies]
 # Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
 # Use a fixed git revision for reproducible golden baseline across environments.
