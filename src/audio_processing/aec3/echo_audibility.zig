@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_utils = @import("test_utils.zig");
 
 pub const EchoAudibility = struct {
     smoothing: f32,
@@ -42,4 +43,32 @@ test "echo_audibility time-varying tracking" {
     const v1 = try audibility.update(1.0, 1.0);
     const v2 = try audibility.update(10.0, 1.0);
     try std.testing.expect(v2 > v1);
+}
+
+test "echo_audibility invalid smoothing" {
+    try std.testing.expectError(error.InvalidSmoothing, EchoAudibility.init(-0.1));
+    try std.testing.expectError(error.InvalidSmoothing, EchoAudibility.init(1.1));
+}
+
+test "echo_audibility invalid power" {
+    var audibility = try EchoAudibility.init(0.5);
+    try std.testing.expectError(error.InvalidPower, audibility.update(-1.0, 1.0));
+    try std.testing.expectError(error.InvalidPower, audibility.update(1.0, -1.0));
+}
+
+test "echo_audibility test_utils sine and mixed integration" {
+    const allocator = std.testing.allocator;
+    const near = try test_utils.generateSineWave(allocator, 440.0, 16_000.0, 2.0);
+    defer allocator.free(near);
+    const echo = try test_utils.generateNoise(allocator, 77, 0.001, near.len);
+    defer allocator.free(echo);
+    const noise = try test_utils.generateTestFrame(allocator, near.len, .zeros);
+    defer allocator.free(noise);
+
+    const mixed = try test_utils.generateMixedSignal(allocator, near, echo, noise, .{ 1.0, 0.5, 0.1 });
+    defer allocator.free(mixed);
+
+    var audibility = try EchoAudibility.init(0.0);
+    const v = try audibility.update(@abs(mixed[0]), 1e-3);
+    try std.testing.expect(v >= 0.0 and v <= 1.0);
 }

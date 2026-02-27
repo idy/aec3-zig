@@ -50,3 +50,8 @@ test "dominant_nearend_detector sequence detection" {
         try std.testing.expectEqual(want, detector.detect(n, e));
     }
 }
+
+test "dominant_nearend_detector invalid threshold" {
+    try std.testing.expectError(error.InvalidThreshold, DominantNearendDetector.init(0.0, 0.0));
+    try std.testing.expectError(error.InvalidThreshold, DominantNearendDetector.init(1.0, 2.0));
+}

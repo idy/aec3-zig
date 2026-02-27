@@ -1,4 +1,5 @@
 const std = @import("std");
+const test_utils = @import("test_utils.zig");
 
 pub const ComfortNoiseGenerator = struct {
     prng: std.Random.DefaultPrng,
@@ -73,4 +74,30 @@ test "comfort_noise_generator power matching" {
     for (out) |v| power += v * v;
     power /= @as(f32, @floatFromInt(out.len));
     try std.testing.expectApproxEqAbs(target_power, power, 0.02);
+}
+
+test "comfort_noise_generator invalid power" {
+    var gen = ComfortNoiseGenerator.init(9);
+    var out = [_]f32{0.0} ** 8;
+    try std.testing.expectError(error.InvalidPower, gen.generate(out[0..], -0.01));
+}
+
+test "comfort_noise_generator test_utils noise integration" {
+    const allocator = std.testing.allocator;
+    const reference = try test_utils.generateNoise(allocator, 123, 0.02, 32);
+    defer allocator.free(reference);
+
+    var gen = ComfortNoiseGenerator.init(123);
+    var out = [_]f32{0.0} ** 32;
+    try gen.generate(out[0..], 0.02);
+
+    // 两者都应为非零噪声序列，验证 test_utils 已接入测试流程。
+    var ref_energy: f32 = 0.0;
+    var out_energy: f32 = 0.0;
+    for (reference, out) |r, o| {
+        ref_energy += r * r;
+        out_energy += o * o;
+    }
+    try std.testing.expect(ref_energy > 0.0);
+    try std.testing.expect(out_energy > 0.0);
 }

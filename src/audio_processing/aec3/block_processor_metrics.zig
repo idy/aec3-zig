@@ -34,7 +34,7 @@ pub const BlockProcessorMetrics = struct {
             self.latencies[self.latency_count] = latency_ms;
             self.latency_count += 1;
         } else {
-            const index = @as(usize, @intCast(self.frames_processed % LATENCY_CAPACITY));
+            const index = @as(usize, @intCast((self.frames_processed - 1) % LATENCY_CAPACITY));
             self.latencies[index] = latency_ms;
         }
     }
@@ -96,4 +96,21 @@ test "block_processor_metrics latency distribution" {
     try std.testing.expectEqual(@as(f32, 1.0), s.min_latency_ms);
     try std.testing.expectEqual(@as(f32, 8.0), s.max_latency_ms);
     try std.testing.expectEqual(@as(f32, 8.0), s.p90_latency_ms);
+}
+
+test "block_processor_metrics rejects invalid latency" {
+    var metrics = BlockProcessorMetrics{};
+    try std.testing.expectError(error.InvalidLatency, metrics.recordFrame(80, -0.1));
+}
+
+test "block_processor_metrics ring buffer overwrite index regression" {
+    var metrics = BlockProcessorMetrics{};
+    var i: usize = 0;
+    while (i < LATENCY_CAPACITY) : (i += 1) {
+        try metrics.recordFrame(1, @as(f32, @floatFromInt(i + 1)));
+    }
+    try metrics.recordFrame(1, 999.0);
+
+    // 修复后首次溢出应回写到槽位 0。
+    try std.testing.expectEqual(@as(f32, 999.0), metrics.latencies[0]);
 }

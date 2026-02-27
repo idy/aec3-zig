@@ -69,3 +69,12 @@ test "render_delay_controller_metrics delay jump detection" {
     try metrics.updateDelay(60);
     try std.testing.expectEqual(@as(u64, 1), metrics.snapshot().jump_count);
 }
+
+test "render_delay_controller_metrics invalid init threshold" {
+    try std.testing.expectError(error.InvalidJumpThreshold, RenderDelayControllerMetrics.init(0));
+}
+
+test "render_delay_controller_metrics invalid delay" {
+    var metrics = try RenderDelayControllerMetrics.init(10);
+    try std.testing.expectError(error.InvalidDelay, metrics.updateDelay(-1));
+}

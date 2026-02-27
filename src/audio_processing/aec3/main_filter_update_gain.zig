@@ -49,3 +49,8 @@ test "main_filter_update_gain smooth output" {
     try std.testing.expect(g2 > g1);
     try std.testing.expect(g2 < 1.0);
 }
+
+test "main_filter_update_gain invalid smoothing" {
+    try std.testing.expectError(error.InvalidSmoothing, MainFilterUpdateGain.init(-0.1));
+    try std.testing.expectError(error.InvalidSmoothing, MainFilterUpdateGain.init(1.1));
+}
