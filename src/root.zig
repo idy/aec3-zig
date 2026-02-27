@@ -72,3 +72,17 @@ pub const ReverbDecayEstimator = @import("audio_processing/aec3/reverb_decay_est
 pub const SignalDependentErleEstimator = @import("audio_processing/aec3/signal_dependent_erle_estimator.zig").SignalDependentErleEstimator;
 pub const ErleEstimator = @import("audio_processing/aec3/erle_estimator.zig").ErleEstimator;
 pub const ReverbModelEstimator = @import("audio_processing/aec3/reverb_model_estimator.zig").ReverbModelEstimator;
+
+// Metrics & leaf modules
+pub const ApiCallJitterMetrics = @import("audio_processing/aec3/api_call_jitter_metrics.zig").ApiCallJitterMetrics;
+pub const BlockProcessorMetrics = @import("audio_processing/aec3/block_processor_metrics.zig").BlockProcessorMetrics;
+pub const RenderDelayControllerMetrics = @import("audio_processing/aec3/render_delay_controller_metrics.zig").RenderDelayControllerMetrics;
+pub const EchoRemoverMetrics = @import("audio_processing/aec3/echo_remover_metrics.zig").EchoRemoverMetrics;
+pub const SubtractorOutput = @import("audio_processing/aec3/subtractor_output.zig").SubtractorOutput;
+pub const SubtractorOutputAnalyzer = @import("audio_processing/aec3/subtractor_output_analyzer.zig").SubtractorOutputAnalyzer;
+pub const NearendDetector = @import("audio_processing/aec3/nearend_detector.zig").NearendDetector;
+pub const DominantNearendDetector = @import("audio_processing/aec3/dominant_nearend_detector.zig").DominantNearendDetector;
+pub const SubbandNearendDetector = @import("audio_processing/aec3/subband_nearend_detector.zig").SubbandNearendDetector;
+pub const EchoAudibility = @import("audio_processing/aec3/echo_audibility.zig").EchoAudibility;
+pub const ComfortNoiseGenerator = @import("audio_processing/aec3/comfort_noise_generator.zig").ComfortNoiseGenerator;
+pub const MainFilterUpdateGain = @import("audio_processing/aec3/main_filter_update_gain.zig").MainFilterUpdateGain;
