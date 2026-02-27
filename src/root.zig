@@ -30,6 +30,15 @@ pub const SuppressionParams = @import("audio_processing/ns/suppression_params.zi
 // Foundation 模块
 pub const Aec3Common = @import("audio_processing/aec3/aec3_common.zig");
 pub const DelayEstimate = @import("audio_processing/aec3/delay_estimate.zig");
+pub const AdaptiveFirFilter = @import("audio_processing/aec3/adaptive_fir_filter.zig").AdaptiveFirFilter;
+pub const AdaptiveFirFilterErl = @import("audio_processing/aec3/adaptive_fir_filter_erl.zig").AdaptiveFirFilterErl;
+pub const MatchedFilter = @import("audio_processing/aec3/matched_filter.zig").MatchedFilter;
+pub const LagEstimate = @import("audio_processing/aec3/matched_filter.zig").LagEstimate;
+pub const DownsampledRenderBuffer = @import("audio_processing/aec3/matched_filter.zig").DownsampledRenderBuffer;
+pub const MatchedFilterLagAggregator = @import("audio_processing/aec3/matched_filter_lag_aggregator.zig").MatchedFilterLagAggregator;
+pub const EchoPathDelayEstimator = @import("audio_processing/aec3/echo_path_delay_estimator.zig").EchoPathDelayEstimator;
+pub const RenderSignalAnalyzer = @import("audio_processing/aec3/render_signal_analyzer.zig").RenderSignalAnalyzer;
+pub const FilterAnalyzer = @import("audio_processing/aec3/filter_analyzer.zig").FilterAnalyzer;
 pub const EchoPathVariability = @import("audio_processing/aec3/echo_path_variability.zig");
 pub const FftData = @import("audio_processing/aec3/fft_data.zig");
 pub const ChannelLayout = @import("audio_processing/channel_layout.zig").ChannelLayout;

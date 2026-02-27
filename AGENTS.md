@@ -5,6 +5,7 @@ Repository guide for autonomous coding agents working in this Zig codebase.
 ## 0) Scope and current architecture
 
 - Language: Zig (0.15.x toolchain expected).
+- Build system: **Zig build only** (`build.zig`); this repository does **not** use Bazel.
 - Main module: `src/root.zig`.
 - Build script: `build.zig`.
 - Golden parity suite: `golden_test/`.
