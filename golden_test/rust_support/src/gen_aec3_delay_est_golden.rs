@@ -89,8 +89,10 @@ fn print_vector_usize(name: &str, data: &[usize]) {
 fn frame_signal(frame_idx: usize, sample_idx: usize, amplitude: f32) -> f32 {
     let n = (frame_idx * BLOCK_SIZE + sample_idx) as u32;
     let mut x = n.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
+    // Constants below are xxHash32 primes (PRIME32_2 / PRIME32_3),
+    // used here as a lightweight deterministic mixing step (not MurmurHash3).
     x ^= x >> 16;
-    x = x.wrapping_mul(224_682_2519);
+    x = x.wrapping_mul(2_246_822_519);
     x ^= x >> 13;
     x = x.wrapping_mul(3_266_489_917);
     x ^= x >> 16;
