@@ -6,5 +6,5 @@ test {
     _ = @import("zig/ns.zig");
     _ = @import("zig/audio_infra.zig");
     _ = @import("zig/fft.zig");
-    _ = @import("zig/aec3_delay_est.zig");
+    _ = @import("zig/erle_reverb.zig");
 }
