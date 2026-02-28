@@ -25,5 +25,31 @@ jobs:
         with:
           version: 0.15.2
 
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Verify Formatting
+        run: zig fmt --check src golden_test build.zig
+
       - name: Build and test
         run: zig build test
+
+      - name: Golden Parity Test
+        run: zig build golden-test
+
+      - name: Verify Fixed Path (No Float Call)
+        run: |
+          # 检查 fixed 相关文件是否包含 f32/@cos/@sin (排除明确的 float 实现和测试文件)
+          # 使用 perl 去除以 test 开头到文件末尾的行，然后查找 f32 等
+          if perl -0777 -pe 's/\n*test .*//s' src/aec3/core/i16_pipeline.zig | grep -E "[^a-zA-Z0-9_]f32[^a-zA-Z0-9_]|@cos|@sin"; then
+            echo "Found float usage in core!"
+            exit 1
+          fi
+          if perl -0777 -pe 's/\n*test .*//s' src/aec3/fft/aec3_fft_fixed.zig | grep -E "[^a-zA-Z0-9_]f32[^a-zA-Z0-9_]|@cos|@sin"; then
+            echo "Found float usage in fft_fixed!"
+            exit 1
+          fi

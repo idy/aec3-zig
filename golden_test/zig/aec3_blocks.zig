@@ -189,31 +189,71 @@ test "golden_block_buffer_ring_operations" {
     const expected_write = test_utils.parseNamedUsize(golden_text, "BB_EXPECTED_WRITE_IDX", 1)[0];
     const expected_read = test_utils.parseNamedUsize(golden_text, "BB_EXPECTED_READ_IDX", 1)[0];
 
-    var bb = try aec3.BlockBuffer.init(std.testing.allocator, capacity, 1, 1, block_size);
+    var bb = try aec3.BlockRingBuffer.init(std.testing.allocator, capacity, 1, 1, block_size);
     defer bb.deinit();
 
     var filled: usize = 0;
     for (0..num_written) |w| {
-        for (0..block_size) |i| bb.buffer[bb.write][0][0][i] = @as(f32, @floatFromInt(w * 100 + i));
-        bb.inc_write_index();
+        for (0..block_size) |i| bb.buffer[bb.state.write][0][0][i] = @as(f32, @floatFromInt(w * 100 + i));
+        bb.state.inc_write_index();
         if (filled == capacity) {
-            bb.inc_read_index();
+            bb.state.inc_read_index();
         } else {
             filled += 1;
         }
     }
 
-    try std.testing.expectEqual(expected_write, bb.write);
-    try std.testing.expectEqual(expected_read, bb.read);
+    try std.testing.expectEqual(expected_write, bb.state.write);
+    try std.testing.expectEqual(expected_read, bb.state.read);
 
     var idx: usize = 0;
-    var slot = bb.read;
+    var slot = bb.state.read;
     for (0..capacity) |_| {
         for (0..block_size) |i| {
             try std.testing.expectApproxEqAbs(expected_contents[idx], bb.buffer[slot][0][0][i], 1e-5);
             idx += 1;
         }
-        slot = bb.inc_index(slot);
+        slot = bb.state.inc_index(slot);
+    }
+}
+
+test "golden_block_buffer_fixed_ring_operations" {
+    const capacity = test_utils.parseNamedUsize(golden_text, "BB_CAPACITY", 1)[0];
+    const block_size = test_utils.parseNamedUsize(golden_text, "BB_BLOCK_SIZE", 1)[0];
+    const num_written = test_utils.parseNamedUsize(golden_text, "BB_NUM_WRITTEN", 1)[0];
+    const expected_contents = test_utils.parseNamedF32(golden_text, "BB_EXPECTED_RING_CONTENTS", 256);
+    const expected_write = test_utils.parseNamedUsize(golden_text, "BB_EXPECTED_WRITE_IDX", 1)[0];
+    const expected_read = test_utils.parseNamedUsize(golden_text, "BB_EXPECTED_READ_IDX", 1)[0];
+
+    const Q15 = aec3.profileFor(.fixed_mcu_q15).Sample;
+    var bb = try aec3.BlockRingBufferFixed.init(std.testing.allocator, capacity, 1, 1, block_size);
+    defer bb.deinit();
+
+    var filled: usize = 0;
+    for (0..num_written) |w| {
+        for (0..block_size) |i| bb.buffer[bb.state.write][0][0][i] = Q15.fromFloatRuntime(@as(f32, @floatFromInt(w * 100 + i)));
+        bb.state.inc_write_index();
+        if (filled == capacity) {
+            bb.state.inc_read_index();
+        } else {
+            filled += 1;
+        }
+    }
+
+    try std.testing.expectEqual(expected_write, bb.state.write);
+    try std.testing.expectEqual(expected_read, bb.state.read);
+
+    var idx: usize = 0;
+    var slot = bb.state.read;
+    for (0..capacity) |_| {
+        for (0..block_size) |i| {
+            const expected = expected_contents[idx];
+            const got = bb.buffer[slot][0][0][i].toFloat();
+            // Q15 scaling causes a small loss of precision for large numbers
+            try std.testing.expectApproxEqAbs(expected, got, 0.5);
+            idx += 1;
+        }
+        slot = bb.state.inc_index(slot);
     }
 }
 
@@ -225,15 +265,15 @@ test "golden_fft_buffer_index_ops" {
     const dec_expected = test_utils.parseNamedUsize(golden_text, "FFT_BUF_DEC_EXPECTED", 4);
 
     // golden 索引用例以 4 作为索引空间，和容量字段不同步，这里按向量本身验证真实实现。
-    var fb = try aec3.FftBuffer.init(std.testing.allocator, 4, 1);
+    var fb = try aec3.FftRingBuffer.init(std.testing.allocator, 4, 1);
     defer fb.deinit();
 
     try std.testing.expectEqual(@as(usize, 3), capacity);
 
     for (inc_input, inc_expected) |inp, exp| {
-        try std.testing.expectEqual(exp, fb.inc_index(inp));
+        try std.testing.expectEqual(exp, fb.state.inc_index(inp));
     }
     for (dec_input, dec_expected) |inp, exp| {
-        try std.testing.expectEqual(exp, fb.dec_index(inp));
+        try std.testing.expectEqual(exp, fb.state.dec_index(inp));
     }
 }
