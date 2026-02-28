@@ -11,6 +11,7 @@ pub const aec3_delay_est = @import("zig/aec3_delay_est.zig");
 pub const metrics_leafs = @import("zig/metrics_leafs.zig");
 pub const fixed_point = @import("zig/fixed_point.zig");
 pub const suppression_core = @import("zig/suppression_core.zig");
+pub const echo_canceller3 = @import("zig/echo_canceller3.zig");
 
 test {
     std.testing.refAllDecls(@This());
