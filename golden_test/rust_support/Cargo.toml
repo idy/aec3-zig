@@ -35,6 +35,10 @@ path = "src/gen_metrics_leafs_golden.rs"
 name = "aec3-blocks-golden"
 path = "src/gen_aec3_blocks_golden.rs"
 
+[[bin]]
+name = "suppression-core-golden-generator"
+path = "src/gen_suppression_core_golden.rs"
+
 [dependencies]
 # Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
 # Use a fixed git revision for reproducible golden baseline across environments.
