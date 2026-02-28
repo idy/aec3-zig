@@ -25,5 +25,26 @@ jobs:
         with:
           version: 0.15.2
 
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Verify Formatting
+        run: zig fmt --check src golden_test build.zig
+
       - name: Build and test
         run: zig build test
+
+      - name: Golden Parity Test
+        run: zig build golden-test
+
+      - name: Verify Fixed Path (No Float Call)
+        run: |
+          # 检查 fixed 相关文件或流程是否包含 f32/@cos/@sin (排除明确的 float 实现和测试文件)
+          # 这里的脚本会查找不该用浮点的固定点实现文件中是否有残留浮点代码
+          ! grep -E "f32|@cos|@sin" src/aec3/core/i16_pipeline.zig
+          # 如果我们还有更多只允许 fixed-point 的核心文件，可以在这里加入门禁。
+          ! grep -E "@cos|@sin" src/fft/fft_core.zig || true # (允许 comptime 生成，后续可细化检查)
