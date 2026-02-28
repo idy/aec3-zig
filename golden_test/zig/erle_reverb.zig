@@ -531,7 +531,7 @@ test "golden_erle_estimator_case1_aggregator" {
     defer est.deinit();
 
     // Construct a dummy SpectrumBuffer (signal_dependent is None with num_sections=1)
-    var sb = try aec3.SpectrumBuffer.init(allocator, 20, 1);
+    var sb = try aec3.SpectrumRingBuffer.init(allocator, 20, 1);
     defer sb.deinit();
 
     const x2 = [_]f32{100_000_000.0} ** FFT_LENGTH_BY_2_PLUS_1;
@@ -576,7 +576,7 @@ test "golden_signal_dep_erle_case1" {
     // The Rust test uses RenderDelayBuffer with alternating frames.
     // With num_sections=2 and simple constant average_erle, the output
     // is clamped to [min_erle, max_erle]. Validate against golden vectors.
-    var sb = try aec3.SpectrumBuffer.init(allocator, 20, 1);
+    var sb = try aec3.SpectrumRingBuffer.init(allocator, 20, 1);
     defer sb.deinit();
 
     const average_erle = [_][FFT_LENGTH_BY_2_PLUS_1]f32{[_]f32{cfg.erle.max_l} ** FFT_LENGTH_BY_2_PLUS_1};
@@ -590,16 +590,16 @@ test "golden_signal_dep_erle_case1" {
     for (0..100) |iter| {
         // Alternate between zero and active frames in the spectrum buffer
         if (iter % 2 == 0) {
-            @memset(&sb.buffer[sb.write][0], 0.0);
+            @memset(&sb.buffer[sb.state.write][0], 0.0);
         } else {
-            for (&sb.buffer[sb.write][0], 0..) |*v, k| {
+            for (&sb.buffer[sb.state.write][0], 0..) |*v, k| {
                 v.* = @as(f32, @floatFromInt(k + 1)) * 1000.0;
             }
         }
-        sb.inc_write_index();
+        sb.state.inc_write_index();
 
-        const idx = sb.read;
-        const prev_idx = sb.offset_index(idx, 1);
+        const idx = sb.state.read;
+        const prev_idx = sb.state.offset_index(idx, 1);
 
         var x2: [FFT_LENGTH_BY_2_PLUS_1]f32 = undefined;
         @memcpy(&x2, &sb.buffer[idx][0]);
@@ -610,8 +610,8 @@ test "golden_signal_dep_erle_case1" {
             y2[0][k] = sb.buffer[idx][0][k] + e2[0][k];
         }
 
-        est.update(&sb, sb.read, &h2, &x2, &y2, &e2, &average_erle, &converged);
-        sb.inc_read_index();
+        est.update(&sb, sb.state.read, &h2, &x2, &y2, &e2, &average_erle, &converged);
+        sb.state.inc_read_index();
     }
 
     // Validate output against Rust golden vectors with tolerance.
