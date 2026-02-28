@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("../common/aec3_common.zig");
 const profileFor = @import("../../numeric_profile.zig").profileFor;
-const Aec3Fft = @import("../fft/aec3_fft.zig").Aec3Fft;
+const Aec3Fft = @import("../fft/mod.zig").Aec3Fft;
 
 const Q15 = profileFor(.fixed_mcu_q15).Sample;
 
