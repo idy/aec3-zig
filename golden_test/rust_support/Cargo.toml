@@ -39,6 +39,18 @@ path = "src/gen_aec3_blocks_golden.rs"
 name = "suppression-core-golden-generator"
 path = "src/gen_suppression_core_golden.rs"
 
+[[bin]]
+name = "ec3-golden-generator"
+path = "src/gen_echo_canceller3_golden.rs"
+
+[[bin]]
+name = "delay-golden-generator"
+path = "src/gen_render_delay_golden.rs"
+
+[[bin]]
+name = "gen-aec3-delay-est-golden"
+path = "src/gen_aec3_delay_est_golden.rs"
+
 [dependencies]
 # Alignment direction: Zig implementation is validated against Rust aec3-rs golden baseline.
 # Use a fixed git revision for reproducible golden baseline across environments.
