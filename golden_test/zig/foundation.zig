@@ -36,6 +36,40 @@ test "golden_fft_data_spectrum_0" {
     }
 }
 
+test "golden_fft_data_fixed_vs_float_spectrum" {
+    const packed_array = test_utils.parseNamedF32(golden_text, "SPECTRUM_PACKED_0", aec3.Aec3Common.FFT_LENGTH);
+
+    // Compute float spectrum
+    var d_float = aec3.Aec3FftData.new();
+    d_float.copy_from_packed_array(&packed_array);
+    var out_float: [aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1]f32 = undefined;
+    d_float.spectrum(.none, &out_float);
+
+    // Compute fixed spectrum
+    const Q15 = aec3.profileFor(.fixed_mcu_q15).Sample;
+    var d_fixed = aec3.Aec3FftDataFixed.new();
+    d_fixed.re_q15[0] = Q15.fromFloatRuntime(packed_array[0]);
+    d_fixed.re_q15[aec3.Aec3Common.FFT_LENGTH_BY_2] = Q15.fromFloatRuntime(packed_array[1]);
+    var idx: usize = 2;
+    for (1..aec3.Aec3Common.FFT_LENGTH_BY_2) |k| {
+        d_fixed.re_q15[k] = Q15.fromFloatRuntime(packed_array[idx]);
+        d_fixed.im_q15[k] = Q15.fromFloatRuntime(packed_array[idx + 1]);
+        idx += 2;
+    }
+
+    var out_fixed: [aec3.Aec3Common.FFT_LENGTH_BY_2_PLUS_1]i64 = undefined;
+    d_fixed.spectrumQ30(&out_fixed);
+
+    // Compare
+    // Since Q15 numbers are scaled by 2^15, their squares are scaled by 2^30.
+    // So fixed_value / 2^30 should be approximately equal to float_value.
+    const scaling = 1.0 / @as(f64, @floatFromInt(@as(u64, 1) << 30));
+    for (out_float, out_fixed) |flt_val, fix_val| {
+        const fix_flt = @as(f64, @floatFromInt(fix_val)) * scaling;
+        try std.testing.expectApproxEqAbs(@as(f64, @floatCast(flt_val)), fix_flt, 0.005);
+    }
+}
+
 test "golden_config_defaults" {
     const expected = test_utils.parseNamedF64(golden_text, "CONFIG_DEFAULTS", 20);
     const cfg = aec3.Config.EchoCanceller3Config.default();
