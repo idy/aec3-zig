@@ -531,7 +531,7 @@ test "golden_erle_estimator_case1_aggregator" {
     defer est.deinit();
 
     // Construct a dummy SpectrumBuffer (signal_dependent is None with num_sections=1)
-    var sb = try aec3.SpectrumBuffer.init(allocator, 20, 1);
+    var sb = try aec3.SpectrumRingBuffer.init(allocator, 20, 1);
     defer sb.deinit();
 
     const x2 = [_]f32{100_000_000.0} ** FFT_LENGTH_BY_2_PLUS_1;
@@ -576,7 +576,7 @@ test "golden_signal_dep_erle_case1" {
     // The Rust test uses RenderDelayBuffer with alternating frames.
     // With num_sections=2 and simple constant average_erle, the output
     // is clamped to [min_erle, max_erle]. Validate against golden vectors.
-    var sb = try aec3.SpectrumBuffer.init(allocator, 20, 1);
+    var sb = try aec3.SpectrumRingBuffer.init(allocator, 20, 1);
     defer sb.deinit();
 
     const average_erle = [_][FFT_LENGTH_BY_2_PLUS_1]f32{[_]f32{cfg.erle.max_l} ** FFT_LENGTH_BY_2_PLUS_1};

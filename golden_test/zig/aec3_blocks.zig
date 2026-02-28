@@ -189,7 +189,7 @@ test "golden_block_buffer_ring_operations" {
     const expected_write = test_utils.parseNamedUsize(golden_text, "BB_EXPECTED_WRITE_IDX", 1)[0];
     const expected_read = test_utils.parseNamedUsize(golden_text, "BB_EXPECTED_READ_IDX", 1)[0];
 
-    var bb = try aec3.BlockBuffer.init(std.testing.allocator, capacity, 1, 1, block_size);
+    var bb = try aec3.BlockRingBuffer.init(std.testing.allocator, capacity, 1, 1, block_size);
     defer bb.deinit();
 
     var filled: usize = 0;
@@ -225,7 +225,7 @@ test "golden_fft_buffer_index_ops" {
     const dec_expected = test_utils.parseNamedUsize(golden_text, "FFT_BUF_DEC_EXPECTED", 4);
 
     // golden 索引用例以 4 作为索引空间，和容量字段不同步，这里按向量本身验证真实实现。
-    var fb = try aec3.FftBuffer.init(std.testing.allocator, 4, 1);
+    var fb = try aec3.FftRingBuffer.init(std.testing.allocator, 4, 1);
     defer fb.deinit();
 
     try std.testing.expectEqual(@as(usize, 3), capacity);
